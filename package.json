@@ -1,0 +1,61 @@
+{
+  "name": "setup-tracker",
+  "version": "0.1.0",
+  "description": "Local press setup sheet tracker for Viking Forge",
+  "main": "app/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test \"tests/*.test.js\"",
+    "screenshots": "xvfb-run -a electron --no-sandbox scripts/screenshots.js || electron scripts/screenshots.js",
+    "dist": "electron-builder --win --publish never",
+    "icon": "node scripts/make-icon.js"
+  },
+  "author": "AxialForge",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3"
+  },
+  "private": true,
+  "build": {
+    "appId": "com.axialforge.setuptracker",
+    "productName": "Setup Tracker",
+    "copyright": "AxialForge",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "app/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "artifactName": "${productName}-${version}-setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "Setup Tracker",
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "AxialForge",
+        "repo": "SheetTracker"
+      }
+    ]
+  }
+}
