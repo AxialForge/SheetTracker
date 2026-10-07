@@ -56,6 +56,10 @@ Settings → **Names** renames the two identifiers for the open profile (for exa
 
 Backups are taken on save (max one per 5 min), before restore / import / migration, kept to the newest 100. Restore runs an integrity check and backs up the current database first. Put the backup folder on a different drive (Settings → Backup & restore).
 
+## Updates
+
+About → **Updates** checks GitHub Releases for a newer version (shortly after start and every few hours; switch it off there). Nothing downloads or installs without your click: **Download**, then **Restart and update**. Before it installs, the open profile is backed up; the app then closes, updates in place and reopens by itself. Your data folder, profiles and settings are not touched, and a database change in a new version takes its own backup first. A header badge shows when an update is waiting. It only works in the installed app, and only for releases published with the installer (see Develop).
+
 ## Develop
 
 ```
@@ -67,11 +71,11 @@ npm run templates       # regenerate templates/*.xlsx
 npm run dist            # Windows installer in dist/ (run on Windows; Linux needs wine)
 ```
 
-Set `SETUP_TRACKER_DATA_DIR` to run against a scratch data folder. Release: bump the version, `git tag vX.Y.Z && git push origin vX.Y.Z`; CI builds and attaches the installer.
+Set `SETUP_TRACKER_DATA_DIR` to run against a scratch data folder. Release: bump `version` in `package.json`, merge, then `git tag vX.Y.Z && git push origin vX.Y.Z` on `main`; CI builds and attaches the installer, `latest.yml` and the `.blockmap`. The in-app updater reads `latest.yml`, so every release must carry all three, and its version must be higher than the one installed.
 
 ## Known gaps
 
 - The factory setting names, units and sections are a starting set. Change what each form carries in the Forms tab (and rename, hide or add fields there or in Settings → Fields); the line → form mapping is in Settings.
 - Dark themes only (crimson default, amber, steel).
-- No code signing and no auto-update.
+- No code signing, so Windows SmartScreen warns on the first install (updates made from inside the app do not repeat that).
 - Deferred by design: OCR / photo extraction, network-folder database, multi-user.

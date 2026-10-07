@@ -18,6 +18,15 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run dist
+      - name: Check the update files are there (the in-app updater needs them)
+        shell: bash
+        run: |
+          test -f dist/win-unpacked/resources/app-update.yml
+          grep -q "owner: AxialForge" dist/win-unpacked/resources/app-update.yml
+          grep -q "repo: SheetTracker" dist/win-unpacked/resources/app-update.yml
+          test -f dist/latest.yml
+          grep -q "^version: $(node -p "require('./package.json').version")$" dist/latest.yml
+          ls dist/*.blockmap
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true

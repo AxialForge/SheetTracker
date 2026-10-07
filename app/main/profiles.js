@@ -21,11 +21,15 @@ class ProfileManager {
         return d;
       }
     } catch { /* first run, or unreadable: start from the default profile */ }
-    const d = { active: 'default', profiles: [{ id: 'default', name: 'Viking Forge', dir: '', blank: false }] };
+    const d = { active: 'default', profiles: [{ id: 'default', name: 'Viking Forge', dir: '', blank: false }], app: {} };
     this._write(d);
     return d;
   }
   _write(d = this.data) { fs.writeFileSync(this.file, JSON.stringify(d, null, 2)); }
+
+  // App-wide preferences (not per profile).
+  getApp() { return { autoUpdate: true, ...(this.data.app || {}) }; }
+  setApp(patch) { this.data.app = { ...(this.data.app || {}), ...patch }; this._write(); return this.getApp(); }
 
   dirOf(id) {
     const p = this.get(id);

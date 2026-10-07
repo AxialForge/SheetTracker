@@ -7,6 +7,7 @@ const { SetupService, dayLocal } = require('./service');
 const { toCsv, toXlsx } = require('./export');
 const { reportHtml } = require('./report');
 const { ProfileManager } = require('./profiles');
+const { createUpdater } = require('./updater');
 
 const API = new Set([
   'getSettings', 'setSettings', 'getPaths', 'getFields', 'fieldsForForm', 'updateField', 'addField', 'deleteField',
@@ -21,6 +22,7 @@ const API = new Set([
 let svc;
 let win;
 let pm;
+let updater;
 
 const rootDir = () => process.env.SETUP_TRACKER_DATA_DIR || path.join(os.homedir(), '.setup_tracker');
 function openProfile(id) {
@@ -86,6 +88,11 @@ function register() {
   const h = (name, fn) => ipcMain.handle(name, async (_e, ...a) => {
     try { return { ok: true, value: await fn(...a) }; } catch (e) { return { ok: false, error: e.message }; }
   });
+  h('update:state', () => ({ ...updater.getState(), auto: pm.getApp().autoUpdate }));
+  h('update:check', () => updater.check({ silent: false }));
+  h('update:download', () => updater.download());
+  h('update:install', () => updater.install());
+  h('update:setAuto', (on) => { pm.setApp({ autoUpdate: !!on }); return pm.getApp().autoUpdate; });
   h('profile:list', () => ({ active: pm.activeId(), profiles: pm.list() }));
   h('profile:switch', (id) => { switchTo(id); return true; });
   h('profile:create', ({ name, blank = true, copyForms = false }) => {
@@ -190,9 +197,17 @@ else {
       app.quit();
       return;
     }
+    updater = createUpdater({
+      autoUpdater: app.isPackaged ? require('electron-updater').autoUpdater : null,
+      isPackaged: app.isPackaged,
+      currentVersion: app.getVersion(),
+      send: (st) => win?.webContents.send('update:status', { ...st, auto: pm.getApp().autoUpdate }),
+      beforeInstall: async () => { svc.backupNow('pre-update', true); },
+    });
     register();
     createWindow();
     updateTitle();
+    updater.startAutoCheck({ enabled: () => pm.getApp().autoUpdate });
     win.webContents.once('did-finish-load', () => setTimeout(autoReport, 1500));
     app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
   });

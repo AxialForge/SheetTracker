@@ -57,6 +57,7 @@ app.whenReady().then(async () => {
       await shot(`${theme}-${tab}`);
     }
   }
+  await run(`ST.api('setSettings', {theme: 'crimson'})`); // the committed screenshots are the crimson ones
   // exercise save + export + report paths for real
   const saved = await run(`ST.api('saveEntry', {line: 5, part_no: '6120-C', values: {billet_temp: {setpoint: '2250', actual: '2300'}}, notes: 'smoke'})`);
   const csv = await run(`ST.main('report:create', new Date().toLocaleDateString('en-CA'))`);
@@ -138,8 +139,46 @@ app.whenReady().then(async () => {
     return out;
   })()`);
   console.log('template', JSON.stringify({ modalShown, ...imported }));
-  // Profiles: a second, separate database; the window reloads onto it
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // choosing a type in the field creator offers that type's setup (rating scale, allowed values, limits)
+  const creator = await run(`(async () => {
+    ST.tabs.forms.sel = 10899; await ST.show('forms');
+    const out = {};
+    const q = (label) => document.querySelector('[aria-label="' + label + '"]');
+    const pick = (value) => { const t = q('Type'); t.value = value; t.dispatchEvent(new Event('change', { bubbles: true })); };
+    const fill = (label, v) => { const el = q(label); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+    pick('rating');
+    out.ratingInputs = !!q('Rating from') && !!q('to') && q('to').value === '5';
+    fill('New field name', 'Smoke rating'); fill('to', '10');
+    [...document.querySelectorAll('button')].find((b) => b.textContent === 'Create field').click();
+    await new Promise((r) => setTimeout(r, 600));
+    pick('choice');
+    out.choiceInput = !!q('Allowed values') && !q('Rating from');
+    pick('number');
+    out.limitInputs = !!q('Min') && !!q('Max');
+    const f = (await ST.api('getFields')).find((x) => x.label === 'Smoke rating');
+    out.created = !!f && f.kind === 'rating' && f.min === '1' && f.max === '10';
+    return out;
+  })()`);
+  console.log('creator', JSON.stringify(creator));
+  // in-app updater: the card and the header pill follow what the updater reports (a development run has no real updater)
+  const upd = {};
+  upd.devMessage = await run(`(async () => { await ST.show('about'); return document.getElementById('update-card').innerText.includes('development run'); })()`);
+  const push = async (st) => { win.webContents.send('update:status', { current: '0.3.0', auto: true, ...st }); await sleep(250); };
+  await push({ state: 'available', latest: '9.9.9', notes: 'Adds rating setup\nIn-app updates' });
+  upd.pill = await run(`!!document.querySelector('.update-pill')`);
+  upd.available = await run(`document.getElementById('update-card').innerText.includes('Version 9.9.9 is available') && document.getElementById('update-card').innerText.includes('Download 9.9.9')`);
+  await shot('crimson-update');
+  await push({ state: 'downloading', latest: '9.9.9', percent: 40 });
+  upd.progress = await run(`document.getElementById('update-card').innerText.includes('40%')`);
+  await push({ state: 'ready', latest: '9.9.9', percent: 100 });
+  upd.ready = await run(`document.getElementById('update-card').innerText.includes('Restart and update') && document.querySelector('.update-pill.ready') !== null`);
+  await push({ state: 'error', error: 'Could not reach GitHub.', silent: true });
+  upd.error = await run(`document.getElementById('update-card').innerText.includes('Could not reach GitHub') && !document.querySelector('.update-pill')`);
+  await push({ state: 'none', checkedAt: Date.now() });
+  upd.upToDate = await run(`document.getElementById('update-card').innerText.includes('up to date')`);
+  console.log('updater', JSON.stringify(upd));
+  // Profiles: a second, separate database; the window reloads onto it
   const reloaded = () => new Promise((r) => win.webContents.once('did-finish-load', r));
   let wait = reloaded();
   await run(`void ST.main('profile:create', { name: 'Second job', blank: true, copyForms: false }); 0`);
@@ -183,7 +222,7 @@ app.whenReady().then(async () => {
   })()`);
   console.log('profiles', JSON.stringify({ ...second, ...second2, ...back }));
   const profilesOk = [second, second2, back].every((o) => Object.values(o).every(Boolean));
-  const typesOk = profilesOk && Object.values(types).every(Boolean) && modalShown && Object.values(imported).every(Boolean);
+  const typesOk = profilesOk && Object.values(creator).every(Boolean) && Object.values(upd).every(Boolean) && Object.values(types).every(Boolean) && modalShown && Object.values(imported).every(Boolean);
   const bad = errors.length || !pdfOk || !flowOk || !typesOk;
   if (errors.length) console.error('Renderer errors:\n' + errors.join('\n'));
   console.log(bad ? 'SMOKE FAILED' : `SMOKE OK (${THEMES.length * TABS.length} screenshots in docs/screenshots)`);

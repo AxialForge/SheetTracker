@@ -31,7 +31,7 @@ input[type=text], input[type=number], input[type=date], input[type=time], input[
   background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 5px 8px; min-width: 0; color-scheme: dark;
 }
 input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-textarea { width: 100%; resize: vertical; } input.short { width: 90px; }
+textarea { width: 100%; resize: vertical; } input.short { width: 90px; } input.wide { width: 320px; } #status { display: flex; align-items: center; }
 .btn { background: var(--panel2); border: 1px solid var(--border); border-radius: 5px; padding: 6px 12px; cursor: pointer; }
 .btn:hover { border-color: var(--muted); } .btn:disabled { opacity: .5; cursor: default; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
@@ -60,6 +60,10 @@ textarea { width: 100%; resize: vertical; } input.short { width: 90px; }
 .chg { color: var(--changed-ink); background: var(--changed); padding: 1px 7px; border-radius: 4px; white-space: nowrap; }
 .linegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
 .ls { border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; display: flex; flex-direction: column; } .ls.ok { border-left: 3px solid var(--ok); } .ls.miss { border-left: 3px solid var(--warn); }
+.update-pill { border-color: var(--ok); color: var(--ok); margin-right: 8px; } .update-pill.ready { background: var(--ok); color: #04130c; font-weight: 600; }
+.bar { height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; max-width: 420px; } .bar i { display: block; height: 100%; background: var(--accent); transition: width .3s; }
+pre.notes { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin: 4px 0; max-height: 180px; overflow: auto; font: inherit; }
+.err-text { color: var(--drift-ink); margin: 0; }
 .profile-sel { background: var(--panel); max-width: 240px; }
 .status-pill { display: inline-block; min-width: 72px; text-align: center; padding: 1px 8px; border-radius: 10px; font-size: 11px; border: 1px solid var(--border); }
 .status-pill.done { color: var(--ok); border-color: var(--ok); } .status-pill.not-yet { color: var(--warn); border-color: var(--warn); } .status-pill.deferred, .status-pill.declined { color: var(--muted); }

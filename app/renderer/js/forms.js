@@ -158,18 +158,20 @@ ST.tabs.forms = {
 
     // create a brand-new field
     const nfld = { label: '', unit: '', kind: 'number', has_sp: '1', section: 'custom', role: 'tracked', everywhere: false };
+    const extras = ST.kindExtras('number');
     const create = h('div', { class: 'col tight' },
       h('div', { class: 'toolbar' },
         h('input', { type: 'text', placeholder: 'New field name', 'aria-label': 'New field name', oninput: (e) => { nfld.label = e.target.value; } }),
         h('input', { type: 'text', placeholder: 'unit', class: 'short', 'aria-label': 'Unit', oninput: (e) => { nfld.unit = e.target.value; } }),
-        ST.select(Types.KINDS.map((k) => [k.key, k.label]), 'number', { 'aria-label': 'Type', onchange: (e) => { nfld.kind = e.target.value; } }),
+        ST.select(Types.KINDS.map((k) => [k.key, k.label]), 'number', { 'aria-label': 'Type', onchange: (e) => { nfld.kind = e.target.value; extras.set(nfld.kind); } }),
         ST.select([['1', 'Setting (setpoint + actual, change-tracked)'], ['0', 'Reading (actual only)']], '1', { 'aria-label': 'Setting or reading', onchange: (e) => { nfld.has_sp = e.target.value; } })),
+      extras.el,
       h('div', { class: 'toolbar' },
         ST.select(sections.map((s) => [s.key, s.label]), 'custom', { 'aria-label': 'Section', onchange: (e) => { nfld.section = e.target.value; } }),
         ST.select([['tracked', 'Tracked'], ['initial', 'Set once']], 'tracked', { 'aria-label': 'Role', onchange: (e) => { nfld.role = e.target.value; } }),
         h('label', { class: 'chk' }, h('input', { type: 'checkbox', onchange: (e) => { nfld.everywhere = e.target.checked; } }), 'Add to every form'),
         h('button', { class: 'btn primary', text: 'Create field', onclick: guard(async () => {
-          await ST.api('addField', { label: nfld.label, unit: nfld.unit, kind: nfld.kind, has_sp: nfld.has_sp === '1', section: nfld.section, role: nfld.role, forms: nfld.everywhere ? 'all' : [cur.form_no] });
+          await ST.api('addField', { label: nfld.label, unit: nfld.unit, kind: nfld.kind, has_sp: nfld.has_sp === '1', section: nfld.section, role: nfld.role, forms: nfld.everywhere ? 'all' : [cur.form_no], ...extras.values() });
           await again(); ST.toast('Field created');
         }) })));
     const addCard = ST.card('Add a field', h('div', { class: 'col tight' }, h('b', { text: 'Existing field' }), existing, h('b', { text: 'New field' }), create));

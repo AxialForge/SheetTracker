@@ -24,12 +24,13 @@ ST.tabs.settings = {
       h('td', { class: 'muted', text: f.unit }),
       h('td', {}, f.custom ? h('button', { class: 'btn ghost sm', text: 'Delete', onclick: guard(async () => { if (!confirm(`Delete custom field "${f.label}" and all of its stored values?`)) return; await ST.api('deleteField', f.key); await ST.refreshCore(); again(); }) }) : null)));
     const nf = { label: '', unit: '', kind: 'number', has_sp: '1' };
-    const addForm = h('div', { class: 'toolbar' },
+    const extras = ST.kindExtras('number');
+    const addForm = h('div', { class: 'col tight' }, h('div', { class: 'toolbar' },
       h('input', { type: 'text', placeholder: 'New field name', oninput: (e) => { nf.label = e.target.value; } }),
       h('input', { type: 'text', placeholder: 'unit', class: 'short', oninput: (e) => { nf.unit = e.target.value; } }),
-      ST.select(Types.KINDS.map((k) => [k.key, k.label]), 'number', { onchange: (e) => { nf.kind = e.target.value; } }),
+      ST.select(Types.KINDS.map((k) => [k.key, k.label]), 'number', { onchange: (e) => { nf.kind = e.target.value; extras.set(nf.kind); } }),
       ST.select([['1', 'Setting (setpoint + actual, change-tracked)'], ['0', 'Reading (actual only)']], '1', { onchange: (e) => { nf.has_sp = e.target.value; } }),
-      h('button', { class: 'btn', text: 'Add field', onclick: guard(async () => { await ST.api('addField', { label: nf.label, unit: nf.unit, kind: nf.kind, has_sp: nf.has_sp === '1', section: 'custom' }); await ST.refreshCore(); again(); }) }));
+      h('button', { class: 'btn', text: 'Add field', onclick: guard(async () => { await ST.api('addField', { label: nf.label, unit: nf.unit, kind: nf.kind, has_sp: nf.has_sp === '1', section: 'custom', ...extras.values() }); await ST.refreshCore(); again(); }) })), extras.el);
     const fieldsCard = ST.card('Fields', h('div', {}, h('p', { class: 'muted', text: 'Hide, rename or add fields for all forms at once. Hidden fields keep their stored data. Settings are change-tracked; readings are not. To change what a single form carries, use the Forms tab.' }),
       h('div', { class: 'tbl-wrap short' }, h('table', { class: 'data-t' }, h('thead', {}, h('tr', {}, ['Show', 'Name', 'Section', 'Type', 'Unit', ''].map((t) => h('th', { text: t })))), h('tbody', {}, fieldRows))), addForm), { class: 'span2' });
 

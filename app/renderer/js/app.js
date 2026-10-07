@@ -10,6 +10,9 @@
     const cur = profs.find((p) => p.id === ST.state.profileId);
     document.getElementById('brand-sub').textContent = cur ? cur.name : '';
     box.replaceChildren();
+    const u = ST.state.update || {};
+    const pill = { available: `Update ${u.latest} available`, downloading: `Downloading update ${u.percent || 0}%`, ready: 'Update ready: restart' }[u.state];
+    if (pill) box.append(ST.h('button', { class: `btn sm update-pill ${u.state}`, text: pill, title: 'Open About → Updates', onclick: () => ST.show('about') }));
     if (profs.length < 2) return;
     const sel = ST.select(profs.map((p) => [p.id, p.name]), ST.state.profileId, { class: 'profile-sel', 'aria-label': 'Open profile', title: 'Switch profile (job)',
       onchange: async (e) => { try { await ST.main('profile:switch', e.target.value); } catch (err) { ST.fail(err); e.target.value = ST.state.profileId; } } });
@@ -35,6 +38,15 @@
     window.addEventListener('keydown', (e) => {
       if (e.ctrlKey && e.key === 's') { e.preventDefault(); if (current === 'entry') ST.tabs.entry.save(); }
       else if (e.ctrlKey && /^[1-7]$/.test(e.key)) { e.preventDefault(); ST.show(ORDER[Number(e.key) - 1]); }
+    });
+    window.api.onUpdate((st) => {
+      const prev = ST.state.update?.state;
+      ST.state.update = st;
+      renderStatus();
+      ST.tabs.about.drawUpdate?.();
+      if (st.state === 'available' && prev !== 'available') ST.toast(`Version ${st.latest} is available. Open About → Updates to install it.`);
+      else if (st.state === 'ready' && prev !== 'ready') ST.toast(`Version ${st.latest} is ready. Open About → Updates and restart.`);
+      else if (st.state === 'error' && !st.silent) ST.toast(st.error, 'err');
     });
     window.api.onAutoReport((file) => ST.toast(`Weekly report created: ${file}`));
     window.addEventListener('error', (e) => ST.fail(e.error || e.message));

@@ -63,10 +63,11 @@ ST.setLabels({});
 ST.lineName = (n) => `${ST.L.line} ${n}`;
 
 ST.refreshCore = async function refreshCore() {
-  const [settings, fields, lineForms, forms, sections, prof] = await Promise.all([ST.api('getSettings'), ST.api('getFields'), ST.api('getLineForms'), ST.api('getForms'), ST.api('getSections'), ST.main('profile:list')]);
+  const [settings, fields, lineForms, forms, sections, prof, update] = await Promise.all([ST.api('getSettings'), ST.api('getFields'), ST.api('getLineForms'), ST.api('getForms'), ST.api('getSections'), ST.main('profile:list'), ST.main('update:state')]);
   ST.setLabels(settings);
   ST.state.profiles = prof.profiles;
   ST.state.profileId = prof.active;
+  ST.state.update = update;
   ST.state.settings = settings;
   ST.state.fields = fields;
   ST.state.lineForms = lineForms;
@@ -119,6 +120,26 @@ ST.modal = function modal({ title, body, buttons, wide }) {
     document.body.append(overlay);
     overlay.querySelector('.btn.primary')?.focus();
   });
+};
+
+// The extra inputs a new field needs once its type is chosen: a rating's scale, a choice's list, a number's limits.
+// el: the container to place in the form;  set(kind): redraw for a type;  values(): { choices, min, max } to pass to addField.
+ST.kindExtras = function kindExtras(initialKind = 'number') {
+  const v = { choices: '', min: '', max: '' };
+  const el = ST.h('div', { class: 'toolbar tight kind-extras' });
+  const box = (label, key, placeholder, title, cls = 'short') => ST.h('label', { class: 'inl' }, `${label} `,
+    ST.h('input', { type: 'text', class: cls, value: v[key], placeholder, title, 'aria-label': label, oninput: (e) => { v[key] = e.target.value; } }));
+  const set = (kind) => {
+    v.choices = ''; v.min = ''; v.max = '';
+    if (kind === 'rating') { v.min = '1'; v.max = '5'; }
+    el.replaceChildren();
+    if (kind === 'rating') el.append(box('Rating from', 'min', '1', 'The lowest rating, usually 1 (or 0)'), box('to', 'max', '5', 'The highest rating: 5 means 1–5, 10 means 1–10'), ST.h('span', { class: 'muted', text: 'e.g. 1 to 5 shows a 1–5 dropdown; “4/5” is read as 4' }));
+    else if (kind === 'choice') el.append(box('Allowed values', 'choices', 'Standard; Heavy; Light', 'Separate with semicolons', 'wide'));
+    else if (kind === 'text') el.append(box('Known values', 'choices', 'optional: A; B; C', 'Offered as suggestions, separate with semicolons', 'wide'));
+    else if (kind === 'number' || kind === 'duration' || kind === 'time') el.append(box('Min', 'min', 'optional', 'Values below this are flagged, not blocked'), box('Max', 'max', 'optional', 'Values above this are flagged, not blocked'));
+  };
+  set(initialKind);
+  return { el, set, values: () => ({ ...v }) };
 };
 
 ST.card = (title, body, opts = {}) => ST.h('section', { class: `card ${opts.class || ''}` },
