@@ -139,7 +139,7 @@ test('list is sorted by line then part, newest first', () => {
   assert.deepEqual(order, ['1A11', '1A09', '1B10', '7B10']);
 });
 
-test('migration v2 -> v5 keeps data, adds columns/tables, backs up first', () => {
+test('migration v2 -> v6 keeps data, adds columns/tables, backs up first', () => {
   const dir = tmp();
   const dbPath = path.join(dir, 'setups.db');
   const db = new DatabaseSync(dbPath);
@@ -156,7 +156,7 @@ test('migration v2 -> v5 keeps data, adds columns/tables, backs up first', () =>
     PRAGMA user_version = 2;`);
   db.close();
   const svc = new SetupService({ dataDir: dir, now: () => new Date('2026-03-18T12:00:00') });
-  assert.equal(svc.db.prepare('PRAGMA user_version').get().user_version, 5);
+  assert.equal(svc.db.prepare('PRAGMA user_version').get().user_version, 6);
   const e = svc.getEntry(1);
   assert.equal(e.notes, 'old note'); assert.equal(e.values.nitrogen.actual, '452'); assert.equal(e.reason, '');
   assert.equal(e.voided, 0); assert.equal(e.void_reason, ''); assert.equal(svc.listEntries({}).total, 1);

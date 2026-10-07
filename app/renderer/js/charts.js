@@ -34,7 +34,7 @@
 
   // series: [{name, points:[{ts,y}], dashed?, color?}]
   ST.charts = {
-    line(series, { unit = '', w = 640, h = 280 } = {}) {
+    line(series, { unit = '', w = 640, h = 280, fmtY = (v) => String(v) } = {}) {
       const ink = ST.cssVar('--muted'); const grid = ST.cssVar('--border'); const accent = ST.cssVar('--accent');
       const svg = frame(w, h);
       const all = series.flatMap((s) => s.points);
@@ -48,7 +48,7 @@
       const Y = (v) => h - m.b - ((v - t.lo) / (t.hi - t.lo)) * (h - m.t - m.b);
       t.ticks.forEach((v) => {
         svg.append(S('line', { x1: m.l, x2: w - m.r, y1: Y(v), y2: Y(v), stroke: grid, 'stroke-width': 1 }));
-        svg.append(S('text', { x: m.l - 8, y: Y(v) + 4, 'text-anchor': 'end', fill: ink, 'font-size': 11, 'font-family': 'inherit' }, String(v)));
+        svg.append(S('text', { x: m.l - 8, y: Y(v) + 4, 'text-anchor': 'end', fill: ink, 'font-size': 11, 'font-family': 'inherit' }, fmtY(v)));
       });
       const nx = 5;
       for (let i = 0; i <= nx; i++) {
@@ -66,7 +66,7 @@
         if (!s.dashed) {
           pts.forEach((p) => {
             const c = S('circle', { cx: X(tsToMs(p.ts)), cy: Y(p.y), r: 3, fill: color });
-            c.append(S('title', {}, `${s.name}: ${p.y}${unit ? ' ' + unit : ''}  ·  ${ST.fmtDate(p.ts)}`));
+            c.append(S('title', {}, `${s.name}: ${fmtY(p.y)}${unit ? ' ' + unit : ''}  ·  ${ST.fmtDate(p.ts)}`));
             svg.append(c);
           });
         }

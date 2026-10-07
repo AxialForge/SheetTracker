@@ -84,17 +84,26 @@ ST.tabs.entry = {
     for (const f of this.S.fields) {
       if (!f.has_sp) continue;
       const v = this.S.values[f.key];
-      if (v && Compare.changed(this.lastOf(f.key).actual, v.actual)) n++;
+      if (v && Types.changed(f, this.lastOf(f.key).actual, v.actual)) n++;
     }
     return n;
   },
-  mark(input, key, which) {
+  // strict: also flag a value that does not fit the field's type (checked when the box is left, not while typing).
+  mark(input, key, which, strict) {
     const f = this.S.fields.find((x) => x.key === key);
     const v = this.val(key);
-    input.classList.remove('changed', 'drift');
-    if (!f || !f.has_sp || which !== 'actual') return;
-    if (Compare.changed(this.lastOf(key).actual, v.actual)) input.classList.add('changed');
-    else if (Compare.drifted(v.setpoint, v.actual)) input.classList.add('drift');
+    input.classList.remove('changed', 'drift', 'oor');
+    if (strict !== undefined) {
+      const r = f && !Compare.blank(v[which]) ? Types.parse(f, v[which]) : { ok: true };
+      input.classList.toggle('bad', !r.ok);
+      input.title = r.ok ? '' : r.error;
+    }
+    if (!f || which !== 'actual' || input.classList.contains('bad')) return;
+    const range = Types.outOfRange(f, v.actual);
+    if (range) { input.classList.add('oor'); input.title = `${range === 'low' ? 'Below' : 'Above'} the limit of ${range === 'low' ? f.min : f.max}${f.unit ? ` ${f.unit}` : ''}`; }
+    if (!f.has_sp) return;
+    if (Types.changed(f, this.lastOf(key).actual, v.actual)) input.classList.add('changed');
+    else if (Types.drifted(f, v.setpoint, v.actual)) input.classList.add('drift');
   },
   refresh() {
     this.root.querySelectorAll('input[data-key][data-which="actual"]').forEach((inp) => this.mark(inp, inp.dataset.key, 'actual'));
@@ -102,22 +111,43 @@ ST.tabs.entry = {
     if (btn) { const n = this.countChanges(); btn.textContent = `Save Entry (${n} change${n === 1 ? '' : 's'})`; }
   },
 
+  // One entry box, shaped by the field's type: pick-lists and ratings are dropdowns, times and dates use the native pickers.
   input(key, which, placeholder) {
     const f = this.S.fields.find((x) => x.key === key);
-    const known = f && f.kind === 'text' && this.S.suggest[key]?.length ? `sug-${key}` : null; // pick-list + values already on record
-    const inp = ST.h('input', {
-      type: 'text', class: 'cell', 'data-key': key, 'data-which': which, placeholder: placeholder ?? '',
-      inputmode: f && f.kind === 'number' ? 'decimal' : 'text', autocomplete: 'off', 'aria-label': `${f?.label || key} ${which}`,
-      value: this.val(key)[which] || '', list: known,
-      oninput: (e) => { this.val(key)[which] = e.target.value; this.mark(inp, key, which); this.refresh(); },
-      // the coil rows depend on this value; redraw once it is committed, not on every keystroke
-      onchange: key === 'num_coils' && which === 'actual' ? () => { this.applyRole(); this.draw(); } : null,
+    const kind = Types.kindOf(f);
+    const cur = this.val(key)[which] || '';
+    const base = { class: 'cell', 'data-key': key, 'data-which': which, 'aria-label': `${f?.label || key} ${which}` };
+    let inp;
+    const set = (e) => { this.val(key)[which] = e.target.value; this.mark(inp, key, which); this.refresh(); };
+    const done = () => this.mark(inp, key, which, true);
+    const dropdown = (values) => {
+      const list = values.includes(cur) || !cur ? values : [cur, ...values];
+      const hint = placeholder ? `last: ${placeholder}` : '';
+      inp = ST.h('select', { ...base, class: 'cell sel', oninput: set, onchange: done },
+        ST.h('option', { value: '', text: hint ? `— (${hint})` : '—' }), list.map((v) => ST.h('option', { value: v, text: v })));
+      inp.value = cur;
+      return inp;
+    };
+    const choices = Types.choicesOf(f);
+    if (kind === 'choice' && choices.length) return this.finish(dropdown(choices), key, which);
+    if (kind === 'yesno') return this.finish(dropdown(['Yes', 'No']), key, which);
+    if (kind === 'rating') {
+      const lo = f.min !== '' && f.min != null && !Number.isNaN(parseInt(f.min, 10)) ? parseInt(f.min, 10) : 1;
+      const hi = Types.scaleOf(f);
+      return this.finish(dropdown(Array.from({ length: Math.max(0, hi - lo + 1) }, (_, i) => String(lo + i))), key, which);
+    }
+    const known = (kind === 'text' || kind === 'choice') && this.S.suggest[key]?.length ? `sug-${key}` : null; // pick-list + values already on record
+    const hints = { ratio: 'x/y', duration: 'mm:ss or s' };
+    inp = ST.h('input', {
+      ...base, type: kind === 'time' ? 'time' : kind === 'date' ? 'date' : 'text', placeholder: placeholder || hints[kind] || '',
+      inputmode: kind === 'number' || kind === 'duration' ? 'decimal' : 'text', autocomplete: 'off', value: cur, list: known,
+      oninput: set, onchange: (e) => { set(e); done(); if (key === 'num_coils' && which === 'actual') { this.applyRole(); this.draw(); } },
     });
-    this.mark(inp, key, which);
-    return inp;
+    return this.finish(inp, key, which);
   },
+  finish(inp, key, which) { this.mark(inp, key, which); return inp; },
 
-  settingsSection(sec, fields) {
+  settingsSection(sec, fields, readings = []) {
     const { h } = ST;
     const rows = fields.map((f) => {
       const last = this.lastOf(f.key);
@@ -129,19 +159,24 @@ ST.tabs.entry = {
     });
     const open = !(localStorage.getItem(`st.collapse.${sec.key}`) === '1');
     const det = h('details', { class: 'card sec', open, ontoggle: () => localStorage.setItem(`st.collapse.${sec.key}`, det.open ? '0' : '1') },
-      h('summary', {}, h('h3', { text: sec.label }), h('span', { class: 'muted', text: `${fields.length} settings` })),
-      h('table', { class: 'grid-t' }, h('thead', {}, h('tr', {}, h('th', { text: 'Setting' }), h('th', { text: 'Setpoint (sheet)' }), h('th', { text: 'Actual' }), h('th', { text: 'Last' }))), h('tbody', {}, rows)));
+      h('summary', {}, h('h3', { text: sec.label }), h('span', { class: 'muted', text: `${fields.length} setting${fields.length === 1 ? '' : 's'}` })),
+      h('table', { class: 'grid-t' }, h('thead', {}, h('tr', {}, h('th', { text: 'Setting' }), h('th', { text: 'Setpoint (sheet)' }), h('th', { text: 'Actual' }), h('th', { text: 'Last' }))), h('tbody', {}, rows)),
+      readings.length ? this.readingRows(readings) : null);
     return det;
   },
 
-  readingsCard(fields) {
+  // Reading rows (actual only) as a table; used on their own card and under the settings of a mixed section.
+  readingRows(fields) {
     const { h } = ST;
     const rows = fields.map((f) => {
       const last = this.lastOf(f.key);
       return h('tr', {}, h('td', { class: 'lbl', text: f.label }, f.unit ? h('small', { class: 'muted', text: ` ${f.unit}` }) : null, f.role === 'initial' ? h('small', { class: 'tag', text: 'setup' }) : null),
         h('td', {}, this.input(f.key, 'actual', last.actual ?? '')), h('td', { class: 'last mono', text: last.actual ?? '—' }));
     });
-    return ST.card('Readings', h('table', { class: 'grid-t' }, h('thead', {}, h('tr', {}, h('th', { text: 'Reading' }), h('th', { text: 'Actual' }), h('th', { text: 'Last' }))), h('tbody', {}, rows)), { class: 'readings' });
+    return h('table', { class: 'grid-t' }, h('thead', {}, h('tr', {}, h('th', { text: 'Reading' }), h('th', { text: 'Actual' }), h('th', { text: 'Last' }))), h('tbody', {}, rows));
+  },
+  readingsCard(fields, title = 'Readings') {
+    return ST.card(title, this.readingRows(fields), { class: 'readings' });
   },
 
   tonnageCard(fields) {
@@ -199,17 +234,22 @@ ST.tabs.entry = {
       hd('Entered by', h('input', { type: 'text', value: S.header.entered_by, oninput: (e) => { S.header.entered_by = e.target.value; } })));
 
     const secs = [];
-    const sections = ST.state.sections.filter((s) => !['readings', 'tonnage'].includes(s.key)).map((s) => (s.key === 'custom' ? { key: 'custom', label: 'Custom settings' } : s));
-    const known = new Set(sections.map((s) => s.key).concat(['readings', 'tonnage']));
-    for (const sec of sections) {
-      const fl = S.fields.filter((f) => f.has_sp && (f.section === sec.key || (sec.key === 'custom' && !known.has(f.section))));
-      if (fl.length) secs.push(this.settingsSection(sec, fl));
-    }
-    const ton = S.fields.filter((f) => f.section === 'tonnage');
-    const rd = S.fields.filter((f) => !f.has_sp && f.section !== 'tonnage');
     const side = h('div', { class: 'col' });
-    if (ton.length) side.append(this.tonnageCard(ton));
-    if (rd.length) side.append(this.readingsCard(rd));
+    // Sections come from the database. A section with any settings is a card on the left (its readings ride along under the
+    // settings); a section that only holds readings is a card on the right. The tonnage grid is the one special layout.
+    const isTon = (f) => !f.has_sp && /^ton_p\d_s\d$/.test(f.key);
+    const ton = S.fields.filter(isTon);
+    const rest = S.fields.filter((f) => !isTon(f));
+    const known = new Set(ST.state.sections.map((x) => x.key));
+    const order = [...ST.state.sections.map((x) => (x.key === 'custom' ? { key: 'custom', label: 'Custom settings' } : x)), ...(rest.some((f) => !known.has(f.section)) ? [{ key: '__other', label: 'Other' }] : [])];
+    const inSec = (sec, f) => (sec.key === '__other' ? !known.has(f.section) : f.section === sec.key);
+    for (const sec of order) {
+      const mine = rest.filter((f) => inSec(sec, f));
+      const sets = mine.filter((f) => f.has_sp); const reads = mine.filter((f) => !f.has_sp);
+      if (sets.length) secs.push(this.settingsSection(sec, sets, reads));
+      else if (reads.length) side.append(this.readingsCard(reads, sec.key === 'readings' ? 'Readings' : sec.label));
+    }
+    if (ton.length) side.prepend(this.tonnageCard(ton));
 
     // notes + reason + photo
     const chips = ST.opt('reasons') ? h('div', { class: 'chips' }, ['Die change', 'Material', 'Quality', 'Maintenance', 'Other'].map((r) => h('button', { type: 'button', class: `chip ${S.reason === r ? 'on' : ''}`, text: r, onclick: () => { S.reason = S.reason === r ? '' : r; this.draw(); } }))) : null;

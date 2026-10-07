@@ -66,7 +66,8 @@ ST.tabs.data = {
           if (!v) return h('td', { class: 'num dim', text: '' });
           const cls = ['num', 'mono'];
           if (e.changed[c.key]) cls.push('changed'); else if (e.drift[c.key]) cls.push('drift');
-          const tip = [c.has_sp && v.setpoint ? `Sheet setpoint: ${v.setpoint}` : '', e.changed[c.key] ? `Changed from ${e.changed[c.key].from}` : ''].filter(Boolean).join(' · ');
+          if (e.range && e.range[c.key]) cls.push('oor');
+          const tip = [c.has_sp && v.setpoint ? `Sheet setpoint: ${v.setpoint}` : '', e.changed[c.key] ? `Changed from ${e.changed[c.key].from}` : '', e.range && e.range[c.key] ? `Outside the limit (${e.range[c.key] === 'low' ? 'min' : 'max'} ${e.range[c.key] === 'low' ? c.min : c.max})` : ''].filter(Boolean).join(' · ');
           return h('td', { class: cls.join(' '), title: tip, text: v.actual ?? (v.setpoint ? `(${v.setpoint})` : '') });
         }));
       return tr;

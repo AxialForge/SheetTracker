@@ -94,5 +94,18 @@ ST.ask = function ask({ title, message = '', label, value = '', ok = 'OK', requi
   });
 };
 
+// A dialog with arbitrary content. buttons: [{ text, primary, value, disabled }]. Resolves to the clicked button's value (null on Esc / backdrop).
+ST.modal = function modal({ title, body, buttons, wide }) {
+  return new Promise((resolve) => {
+    const done = (v) => { overlay.remove(); resolve(v); };
+    const overlay = ST.h('div', { class: 'modal-back', onmousedown: (e) => { if (e.target === overlay) done(null); }, onkeydown: (e) => { if (e.key === 'Escape') done(null); } },
+      ST.h('div', { class: `modal card${wide ? ' wide' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+        ST.h('h3', { text: title }), ST.h('div', { class: 'modal-body' }, typeof body === 'function' ? body(done) : body),
+        ST.h('div', { class: 'toolbar end' }, buttons.map((b) => ST.h('button', { class: `btn${b.primary ? ' primary' : ' ghost'}`, type: 'button', text: b.text, disabled: b.disabled, onclick: () => done(b.value) })))));
+    document.body.append(overlay);
+    overlay.querySelector('.btn.primary')?.focus();
+  });
+};
+
 ST.card = (title, body, opts = {}) => ST.h('section', { class: `card ${opts.class || ''}` },
   title ? ST.h('header', { class: 'card-h' }, ST.h('h3', { text: title }), opts.actions || null) : null, body);

@@ -13,6 +13,7 @@ const API = new Set([
   'getLineForms', 'setLineForm', 'removeLine', 'formFor', 'listParts', 'allParts', 'listPartsDetailed', 'checkPart', 'renamePart',
   'valueSuggestions', 'saveEntry', 'voidEntry', 'restoreEntry', 'updateNotes',
   'latestValues', 'lastHeader', 'listEntries', 'getEntry', 'dashboard', 'trend', 'compareTrend', 'driftAlerts',
+  'addSection', 'renameSection', 'deleteSection', 'previewTemplate', 'applyTemplate',
   'ackDrift', 'listBackups', 'integrityCheck', 'backupNow', 'getAudit', 'loadSampleData', 'removeSampleData',
 ]);
 
@@ -104,6 +105,19 @@ function register() {
   h('db:import', async () => {
     const r = await dialog.showOpenDialog(win, { title: 'Import a v3 / Setup Tracker database', properties: ['openFile'], filters: [{ name: 'SQLite database', extensions: ['db', 'sqlite'] }] });
     return r.canceled ? null : svc.importDatabase(r.filePaths[0]);
+  });
+  h('template:export', async (opts) => {
+    const bytes = svc.exportTemplate(opts || {});
+    const one = opts?.forms && opts.forms !== 'all' && [].concat(opts.forms).length === 1 ? `form-${[].concat(opts.forms)[0]}` : (opts?.blank ? 'blank' : 'all-forms');
+    const r = await dialog.showSaveDialog(win, { title: 'Save form template', defaultPath: `setup-tracker-template-${one}.xlsx`, filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
+    if (r.canceled) return null;
+    fs.writeFileSync(r.filePath, bytes);
+    svc.audit('template-export', r.filePath);
+    return { file: r.filePath };
+  });
+  h('template:pick', async () => {
+    const r = await dialog.showOpenDialog(win, { title: 'Import form template', properties: ['openFile'], filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
+    return r.canceled ? null : r.filePaths[0];
   });
   h('shell:openFolder', (p) => { fs.mkdirSync(p, { recursive: true }); return shell.openPath(p); });
   h('shell:showItem', (p) => shell.showItemInFolder(p));

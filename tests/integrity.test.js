@@ -181,7 +181,7 @@ test('a correction can fix a mistyped part number', () => {
 
 // ---- migration and labels
 
-test('migration v4 -> v5 relabels only untouched factory names and fills the capacitance unit', () => {
+test('migration v4 -> v6 relabels only untouched factory names and fills the capacitance unit', () => {
   const dir = tmp();
   const a = new SetupService({ dataDir: dir, now: () => new Date('2026-03-18T12:00:00') });
   a.close();
@@ -195,7 +195,7 @@ test('migration v4 -> v5 relabels only untouched factory names and fills the cap
   db.close();
   const b = new SetupService({ dataDir: dir, now: () => new Date('2026-03-18T12:00:00') });
   const label = (k) => b.getFields().find((f) => f.key === k).label;
-  assert.equal(b.db.prepare('PRAGMA user_version').get().user_version, 5);
+  assert.equal(b.db.prepare('PRAGMA user_version').get().user_version, 6);
   assert.equal(label('tonnage_s1'), 'Tonnage setting - station 1');
   assert.equal(label('tonnage_s2'), 'My own name');
   assert.equal(label('ton_p1_s2'), 'Measured tonnage - piece 1 / station 2');

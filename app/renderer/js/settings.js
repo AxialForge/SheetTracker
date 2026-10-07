@@ -20,14 +20,14 @@ ST.tabs.settings = {
       h('td', {}, h('input', { type: 'checkbox', checked: !!f.visible, title: 'Show on forms and in Data', 'aria-label': `Show ${f.label}`, onchange: guard(async (e) => { await ST.api('updateField', f.key, { visible: e.target.checked }); await ST.refreshCore(); again(); }) })),
       h('td', {}, h('input', { type: 'text', class: 'cell', value: f.label, 'aria-label': `Rename ${f.key}`, onchange: guard(async (e) => { await ST.api('updateField', f.key, { label: e.target.value }); await ST.refreshCore(); ST.toast('Renamed'); }) })),
       h('td', { class: 'muted', text: ST.state.sections.find((s) => s.key === f.section)?.label || f.section }),
-      h('td', { class: 'muted', text: f.has_sp ? 'Setting' : 'Reading' }),
+      h('td', { class: 'muted', text: `${Types.label(f.kind).split(' (')[0]} · ${f.has_sp ? 'Setting' : 'Reading'}` }),
       h('td', { class: 'muted', text: f.unit }),
       h('td', {}, f.custom ? h('button', { class: 'btn ghost sm', text: 'Delete', onclick: guard(async () => { if (!confirm(`Delete custom field "${f.label}" and all of its stored values?`)) return; await ST.api('deleteField', f.key); await ST.refreshCore(); again(); }) }) : null)));
     const nf = { label: '', unit: '', kind: 'number', has_sp: '1' };
     const addForm = h('div', { class: 'toolbar' },
       h('input', { type: 'text', placeholder: 'New field name', oninput: (e) => { nf.label = e.target.value; } }),
       h('input', { type: 'text', placeholder: 'unit', class: 'short', oninput: (e) => { nf.unit = e.target.value; } }),
-      ST.select([['number', 'Number'], ['text', 'Text']], 'number', { onchange: (e) => { nf.kind = e.target.value; } }),
+      ST.select(Types.KINDS.map((k) => [k.key, k.label]), 'number', { onchange: (e) => { nf.kind = e.target.value; } }),
       ST.select([['1', 'Setting (setpoint + actual, change-tracked)'], ['0', 'Reading (actual only)']], '1', { onchange: (e) => { nf.has_sp = e.target.value; } }),
       h('button', { class: 'btn', text: 'Add field', onclick: guard(async () => { await ST.api('addField', { label: nf.label, unit: nf.unit, kind: nf.kind, has_sp: nf.has_sp === '1', section: 'custom' }); await ST.refreshCore(); again(); }) }));
     const fieldsCard = ST.card('Fields', h('div', {}, h('p', { class: 'muted', text: 'Hide, rename or add fields for all forms at once. Hidden fields keep their stored data. Settings are change-tracked; readings are not. To change what a single form carries, use the Forms tab.' }),

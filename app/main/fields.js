@@ -74,6 +74,11 @@ const READINGS = [
   ['wagner_pressure', 'Wagner pump pressure', 'readings', 'number', 'PSI', 0],
 ];
 
+// Type details for factory fields that are not plain number/text. Dousing pump condition is "x/5": a rating out of 5.
+const FIELD_EXTRAS = {
+  dousing_pump: { kind: 'rating', min: '0', max: '5', unit: '' },
+};
+
 // Measured tonnage grid: 3 pieces x stations 1-3 (parts have 2 or 3 hits).
 const TONNAGE = [];
 for (let p = 1; p <= 3; p++) {
@@ -220,7 +225,7 @@ const DEFAULT_SETTINGS = {
 const REASONS = ['Die change', 'Material', 'Quality', 'Maintenance', 'Other'];
 
 module.exports = {
-  SECTIONS, BASE, FORM_SPECIFIC, READINGS, TONNAGE, RELABEL_V5, FORMS, DEFAULT_LINE_FORMS, PRESS_TONNAGE,
+  SECTIONS, FIELD_EXTRAS, BASE, FORM_SPECIFIC, READINGS, TONNAGE, RELABEL_V5, FORMS, DEFAULT_LINE_FORMS, PRESS_TONNAGE,
   DEFAULT_SETTINGS, REASONS, formKeys, allDefaults,
   FIELD_MAP_ID, CATALOG, TRACKED_ALL, TRACKED_BY_FORM, INITIAL_ALL, INITIAL_BY_FORM, FORM_META, formLayout, catalogDefaults,
 };

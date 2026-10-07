@@ -7,6 +7,7 @@ ST.tabs.about = {
     const road = [
       ['Done', 'Dashboard, data entry, history, export, backup / restore, drift alerts, change reasons, sheet photos, weekly PDF report, missing-entry tracking, compare lines, editable forms and fields (tracked vs set-once)'],
       ['Done', 'Part-number checks (new-part confirmation, near-miss suggestions, rename / merge), tidy text values with pick-lists, void / correct entries with a reason'],
+      ['Done', 'Field types (number, text, choice, yes/no, rating, ratio, time of day, duration, date) with limits; Excel form templates (download, edit, import with preview)'],
       ['Not yet', 'Sheet revision tracking'],
       ['Deferred', 'OCR / photo extraction of sheets'],
       ['Deferred', 'Network-folder database and multi-user'],

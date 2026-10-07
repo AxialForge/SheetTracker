@@ -12,7 +12,7 @@ ST.tabs.dashboard = {
       const first = allParts.find((p) => String(p.line) === String(sel.line)) || allParts[0];
       if (first) { sel.line = String(first.line); sel.part = first.part_no; }
     }
-    const trendFields = ST.state.fields.filter((f) => f.visible && f.kind === 'number');
+    const trendFields = ST.state.fields.filter((f) => f.visible && Types.chartable(f.kind));
     if (!sel.key || !trendFields.some((f) => f.key === sel.key)) sel.key = (trendFields.find((f) => f.key === 'billet_temp') || trendFields[0] || {}).key || '';
 
     const kpi = (label, value, sub, cls = '') => h('div', { class: `kpi ${cls}` }, h('div', { class: 'kpi-v', text: value }), h('div', { class: 'kpi-l', text: label }), sub ? h('div', { class: 'kpi-s', text: sub }) : null);
@@ -63,18 +63,18 @@ ST.tabs.dashboard = {
 
   async drawTrend() {
     const sel = this.sel;
-    let series; let unit = '';
+    let series; let unit = ''; let kind = 'number';
     if (sel.compare && ST.opt('compare')) {
       const c = await ST.api('compareTrend', { key: sel.key, part: sel.part });
-      unit = c.unit;
+      unit = c.unit; kind = c.kind;
       series = c.series.map((s) => ({ name: `L${s.line} · ${s.part_no}`, points: s.points.map((p) => ({ ts: p.ts, y: p.actual })) }));
     } else {
       const t = await ST.api('trend', { line: sel.line, part: sel.part, key: sel.key });
-      unit = t.unit;
+      unit = t.unit; kind = t.kind;
       series = [{ name: `${t.label} actual`, points: t.points.map((p) => ({ ts: p.ts, y: p.actual })) },
         { name: 'Sheet setpoint', dashed: true, step: true, points: t.points.filter((p) => p.setpoint !== null).map((p) => ({ ts: p.ts, y: p.setpoint })) }];
     }
-    this.trendBox.replaceChildren(ST.charts.line(series, { unit }));
+    this.trendBox.replaceChildren(ST.charts.line(series, { unit, fmtY: (v) => Types.fmtAxis(kind, v) }));
   },
   drawBar(items) {
     this.barBox.replaceChildren(ST.charts.bar(items.map((i) => ({ label: i.label, value: i.count }))));

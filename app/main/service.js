@@ -6,9 +6,11 @@ const os = require('node:os');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const C = require('../shared/compare');
+const T = require('../shared/types');
 const F = require('./fields');
+const Tpl = require('./template');
 
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 const ROLES = ['tracked', 'initial']; // tracked = changes day to day; initial = set once when a Line+Part is first entered
 const BACKUP_THROTTLE_MS = 5 * 60 * 1000;
 const BACKUP_KEEP = 100;
@@ -104,6 +106,22 @@ function migrate(db) {
     for (const [key, from, to] of F.RELABEL_V5) relabel.run(to, key, from);
     db.prepare("UPDATE fields SET unit='µF' WHERE key='capacitance' AND (unit IS NULL OR unit='')").run();
     db.exec('PRAGMA user_version = 5;');
+    v = 5;
+  }
+  if (v < 6) {
+    // Field types beyond number/text: optional min/max (also the scale of a rating); sections move from code into the database.
+    const fcols = db.prepare('PRAGMA table_info(fields)').all().map((c) => c.name);
+    if (!fcols.includes('min')) db.exec("ALTER TABLE fields ADD COLUMN min TEXT NOT NULL DEFAULT ''");
+    if (!fcols.includes('max')) db.exec("ALTER TABLE fields ADD COLUMN max TEXT NOT NULL DEFAULT ''");
+    db.exec('CREATE TABLE IF NOT EXISTS sections(key TEXT PRIMARY KEY, label TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0)');
+    // An existing database is a press-setup one: keep the sections it has always had. A new one is seeded by _seed().
+    if (db.prepare('SELECT COUNT(*) c FROM fields').get().c > 0 && db.prepare('SELECT COUNT(*) c FROM sections').get().c === 0) {
+      const ins = db.prepare('INSERT INTO sections(key,label,sort) VALUES(?,?,?)');
+      F.SECTIONS.forEach((sec, i) => ins.run(sec.key, sec.label, (i + 1) * 10));
+    }
+    // "x/5" dousing-pump condition is a rating out of 5; older values like "4/5" still read correctly.
+    db.prepare("UPDATE fields SET kind='rating', min='0', max='5', unit='' WHERE key='dousing_pump' AND kind='text' AND unit='x/5'").run();
+    db.exec('PRAGMA user_version = 6;');
   }
 }
 
@@ -117,6 +135,7 @@ class SetupService {
     this.photosDir = opts.photosDir || this.config.photosDir || path.join(this.dataDir, 'photos');
     this.backupDir = opts.backupDir || this.config.backupDir || path.join(this.dataDir, 'backups');
     this.now = opts.now || (() => new Date());
+    this.blank = !!opts.blank; // a new, empty profile: no press-setup fields, forms or lines
     this.lastBackupAt = 0;
     this._depth = 0;
     this._cache = null;
@@ -149,13 +168,18 @@ class SetupService {
 
   _seed() {
     const db = this.db;
+    if (db.prepare('SELECT COUNT(*) c FROM sections').get().c === 0) {
+      const ins = db.prepare('INSERT INTO sections(key,label,sort) VALUES(?,?,?)');
+      (this.blank ? [{ key: 'general', label: 'General' }] : F.SECTIONS).forEach((sec, i) => ins.run(sec.key, sec.label, (i + 1) * 10));
+    }
     const n = db.prepare('SELECT COUNT(*) c FROM fields').get().c;
-    if (n === 0) {
+    if (n === 0 && !this.blank) {
       const ins = db.prepare('INSERT OR IGNORE INTO fields(key,label,section,kind,unit,visible,sort,custom,has_sp) VALUES(?,?,?,?,?,1,?,0,?)');
       F.catalogDefaults().forEach((f, i) => ins.run(f[0], f[1], f[2], f[3], f[4], (i + 1) * 10, f[5]));
+      this._applyExtras();
       db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES(\'field_map\',?)').run(F.FIELD_MAP_ID);
     }
-    if (db.prepare('SELECT COUNT(*) c FROM line_forms').get().c === 0) {
+    if (db.prepare('SELECT COUNT(*) c FROM line_forms').get().c === 0 && !this.blank) {
       const ins = db.prepare('INSERT INTO line_forms(line, form_no) VALUES(?,?)');
       Object.entries(F.DEFAULT_LINE_FORMS).forEach(([l, f]) => ins.run(Number(l), f));
     }
@@ -163,9 +187,15 @@ class SetupService {
     Object.entries(F.DEFAULT_SETTINGS).forEach(([k, v]) => ins.run(k, v));
   }
 
+  // Type details of factory fields that are not number/text (rating scale, ...).
+  _applyExtras() {
+    const upd = this.db.prepare('UPDATE fields SET kind=?, min=?, max=?, unit=? WHERE key=?');
+    for (const [key, x] of Object.entries(F.FIELD_EXTRAS)) upd.run(x.kind, x.min || '', x.max || '', x.unit ?? '', key);
+  }
+
   // First run on schema v4: create the forms that exist today with exactly the fields they always had.
   _seedForms() {
-    if (this.db.prepare('SELECT COUNT(*) c FROM forms').get().c > 0) return;
+    if (this.blank || this.db.prepare('SELECT COUNT(*) c FROM forms').get().c > 0) return;
     const nums = new Set(F.FORMS);
     Object.values(F.DEFAULT_LINE_FORMS).forEach((n) => nums.add(n));
     this.db.prepare('SELECT DISTINCT form_no FROM line_forms').all().forEach((r) => nums.add(r.form_no));
@@ -204,6 +234,7 @@ class SetupService {
       const ins = this.db.prepare('INSERT INTO fields(key,label,section,kind,unit,visible,sort,custom,has_sp) VALUES(?,?,?,?,?,1,?,0,?)');
       const upd = this.db.prepare('UPDATE fields SET label=?, section=?, kind=?, unit=?, has_sp=?, visible=1 WHERE key=?');
       F.catalogDefaults().forEach((f, i) => { if (have.has(f[0])) upd.run(f[1], f[2], f[3], f[4], f[5], f[0]); else ins.run(f[0], f[1], f[2], f[3], f[4], (sort += 10), f[5]); });
+      this._applyExtras();
       this.db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES(\'field_map\',?)').run(F.FIELD_MAP_ID);
       for (const n of Object.keys(F.TRACKED_BY_FORM).map(Number)) {
         this.db.prepare('INSERT OR IGNORE INTO forms(form_no,name,notes) VALUES(?,?,?)').run(n, F.FORM_META[n].name, F.FORM_META[n].notes);
@@ -268,15 +299,45 @@ class SetupService {
     Object.values(F.FORM_SPECIFIC).forEach((arr) => arr.forEach((f) => s.add(f[0])));
     return s;
   }
-  getSections() { return F.SECTIONS; }
+  getSections() { return this.db.prepare('SELECT key, label FROM sections ORDER BY sort, key').all(); }
+  _hasSection(key) { return !!this.db.prepare('SELECT 1 FROM sections WHERE key=?').get(key); }
+  // Create a section from a label (or return the existing one with that label/key).
+  addSection(label) {
+    const text = C.norm(label);
+    if (!text) throw new Error('Section name is required');
+    const hit = this.getSections().find((x) => x.key === text || x.label.toLowerCase() === text.toLowerCase());
+    if (hit) return hit;
+    let key = text.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'section';
+    const base = key; let i = 2;
+    while (this._hasSection(key)) key = `${base}_${i++}`;
+    const sort = (this.db.prepare('SELECT MAX(sort) m FROM sections').get().m || 0) + 10;
+    this.db.prepare('INSERT INTO sections(key,label,sort) VALUES(?,?,?)').run(key, text, sort);
+    this.audit('section-add', `${key} (${text})`);
+    return { key, label: text };
+  }
+  renameSection(key, label) {
+    const text = C.norm(label);
+    if (!text) throw new Error('Section name is required');
+    if (!this._hasSection(key)) throw new Error(`Unknown section: ${key}`);
+    this.db.prepare('UPDATE sections SET label=? WHERE key=?').run(text, key);
+    this.audit('section-rename', `${key} -> ${text}`);
+    return this.getSections();
+  }
+  deleteSection(key) {
+    const n = this.db.prepare('SELECT COUNT(*) c FROM fields WHERE section=?').get(key).c;
+    if (n) throw new Error(`${n} field${n === 1 ? ' is' : 's are'} still in this section. Move them first.`);
+    this.db.prepare('DELETE FROM sections WHERE key=?').run(key);
+    this.audit('section-delete', key);
+    return this.getSections();
+  }
   fieldsForForm(form) {
     return this.getFormFields(this.ensureForm(form));
   }
   updateField(key, patch) {
     const cur = this.db.prepare('SELECT * FROM fields WHERE key=?').get(key);
     if (!cur) throw new Error(`Unknown field: ${key}`);
-    if (patch.section !== undefined && !F.SECTIONS.some((s) => s.key === patch.section)) throw new Error(`Unknown section: ${patch.section}`);
-    if (patch.kind !== undefined && !['number', 'text'].includes(patch.kind)) throw new Error('Type must be number or text');
+    if (patch.section !== undefined && !this._hasSection(patch.section)) throw new Error(`Unknown section: ${patch.section}`);
+    if (patch.kind !== undefined && !T.KINDS.some((k) => k.key === patch.kind)) throw new Error(`Unknown type: ${patch.kind}`);
     const next = {
       label: (patch.label ?? cur.label).trim() || cur.label,
       visible: patch.visible === undefined ? cur.visible : (patch.visible ? 1 : 0),
@@ -285,18 +346,42 @@ class SetupService {
       kind: patch.kind ?? cur.kind,
       has_sp: patch.has_sp === undefined ? cur.has_sp : (patch.has_sp ? 1 : 0),
       choices: patch.choices === undefined ? cur.choices : choicesText(patch.choices),
+      min: patch.min === undefined ? cur.min : C.norm(patch.min),
+      max: patch.max === undefined ? cur.max : C.norm(patch.max),
     };
-    this.db.prepare('UPDATE fields SET label=?, visible=?, unit=?, section=?, kind=?, has_sp=?, choices=? WHERE key=?')
-      .run(next.label, next.visible, next.unit, next.section, next.kind, next.has_sp, next.choices, key);
+    this._checkBounds(next);
+    this.db.prepare('UPDATE fields SET label=?, visible=?, unit=?, section=?, kind=?, has_sp=?, choices=?, min=?, max=? WHERE key=?')
+      .run(next.label, next.visible, next.unit, next.section, next.kind, next.has_sp, next.choices, next.min, next.max, key);
     this.audit('field-update', `${key}: ${JSON.stringify(patch)}`);
     this._cache = null;
     return this.getFields();
   }
+  // min/max must parse as the field's own type; a rating's max is its scale (a whole number).
+  _checkBounds(f) {
+    for (const which of ['min', 'max']) {
+      if (C.blank(f[which])) continue;
+      if (f.kind === 'rating' || f.kind === 'choice' || f.kind === 'text' || f.kind === 'yesno' || f.kind === 'ratio' || f.kind === 'date') {
+        if (f.kind === 'rating' && !/^\d+$/.test(String(f[which]).trim())) throw new Error(`${which === 'max' ? 'Scale' : 'Lowest rating'} must be a whole number`);
+        continue;
+      }
+      const r = T.parse({ kind: f.kind }, f[which]);
+      if (!r.ok) throw new Error(`${which === 'min' ? 'Minimum' : 'Maximum'}: ${r.error}`);
+    }
+    if (f.kind === 'rating' && !C.blank(f.max) && parseInt(f.max, 10) < 1) throw new Error('Scale must be at least 1');
+    if (T.NUMERIC.has(f.kind) && f.kind !== 'rating' && f.kind !== 'ratio' && !C.blank(f.min) && !C.blank(f.max)
+      && T.toNumber({ kind: f.kind }, f.min) > T.toNumber({ kind: f.kind }, f.max)) throw new Error('Minimum is above the maximum');
+  }
   // forms: 'all' (default) or a list of form numbers the new field is added to; role: tracked | initial
-  addField({ label, section = 'custom', kind = 'number', unit = '', has_sp = 1, forms = 'all', role = 'tracked' }) {
+  addField({ label, section = 'custom', kind = 'number', unit = '', has_sp = 1, forms = 'all', role = 'tracked', choices = '', min = '', max = '' }) {
     label = String(label || '').trim();
     if (!label) throw new Error('Field name is required');
-    if (!F.SECTIONS.some((s) => s.key === section)) throw new Error(`Unknown section: ${section}`);
+    if (!T.KINDS.some((k) => k.key === kind)) throw new Error(`Unknown type: ${kind}`);
+    if (!this._hasSection(section)) {
+      if (section === 'custom') this.addSection('Custom'); // the default home for new fields, created on demand
+      else throw new Error(`Unknown section: ${section}`);
+    }
+    const bounds = { kind, min: C.norm(min), max: C.norm(max) };
+    this._checkBounds(bounds);
     if (!ROLES.includes(role)) throw new Error('Role must be tracked or initial');
     let base = 'x_' + label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
     let key = base; let i = 2;
@@ -305,8 +390,8 @@ class SetupService {
     const targets = forms === 'all' ? this.db.prepare('SELECT form_no FROM forms').all().map((r) => r.form_no) : [].concat(forms).map(Number);
     for (const n of targets) if (!this.db.prepare('SELECT 1 FROM forms WHERE form_no=?').get(n)) throw new Error(`Form ${n} does not exist`);
     this._tx(() => {
-      this.db.prepare('INSERT INTO fields(key,label,section,kind,unit,visible,sort,custom,has_sp) VALUES(?,?,?,?,?,1,?,1,?)')
-        .run(key, label, section, kind === 'text' ? 'text' : 'number', unit, sort, has_sp ? 1 : 0);
+      this.db.prepare('INSERT INTO fields(key,label,section,kind,unit,visible,sort,custom,has_sp,choices,min,max) VALUES(?,?,?,?,?,1,?,1,?,?,?,?)')
+        .run(key, label, section, kind, unit, sort, has_sp ? 1 : 0, choicesText(choices), bounds.min, bounds.max);
       const ins = this.db.prepare('INSERT OR IGNORE INTO form_fields(form_no,key,role) VALUES(?,?,?)');
       targets.forEach((n) => ins.run(n, key, role));
     });
@@ -544,21 +629,27 @@ class SetupService {
     const fields = this.getFields();
     const fieldMap = new Map(fields.map((f) => [f.key, f]));
     const canons = this._textCanons(fields);
-    const tidy = (f, v) => {
+    const problems = [];
+    const tidy = (f, v, which) => {
       if (C.blank(v)) return null;
-      if (f.kind !== 'text') return String(v).trim();
-      const t = C.norm(v);
-      return canons.get(f.key)?.get(t.toLowerCase()) ?? t;
+      if (f.kind === 'text') {
+        const t = C.norm(v);
+        return canons.get(f.key)?.get(t.toLowerCase()) ?? t;
+      }
+      const r = T.parse(f, v);
+      if (!r.ok) { problems.push(`${f.label}${f.has_sp ? ` (${which})` : ''}: ${r.error}`); return null; }
+      return r.value;
     };
     const values = [];
     for (const [key, v] of Object.entries(e.values || {})) {
       const f = fieldMap.get(key);
       if (!f) continue;
-      const sp = tidy(f, v.setpoint);
-      const ac = tidy(f, v.actual);
+      const sp = tidy(f, v.setpoint, 'setpoint');
+      const ac = tidy(f, v.actual, 'actual');
       if (sp === null && ac === null) continue;
       values.push([key, sp, ac]);
     }
+    if (problems.length) throw new Error(`Fix ${problems.length === 1 ? 'this entry' : 'these entries'} before saving:\n• ${problems.slice(0, 8).join('\n• ')}${problems.length > 8 ? `\n• …and ${problems.length - 8} more` : ''}`);
     const notes = String(e.notes || '').trim();
     if (!values.length && !notes) throw new Error('Nothing to save: enter at least one value or a note.');
     const correctReason = String(e.correct_reason || '').trim();
@@ -579,7 +670,7 @@ class SetupService {
       }
       const before = this.latestValues(line, part, ts); // after the void, so a mistyped entry is not the baseline
       for (const [key, , ac] of values) {
-        if (fieldMap.get(key).has_sp && ac !== null && before[key] && C.changed(before[key].actual, ac)) changes++;
+        if (fieldMap.get(key).has_sp && ac !== null && before[key] && T.changed(fieldMap.get(key), before[key].actual, ac)) changes++;
       }
       this.db.prepare('INSERT OR IGNORE INTO parts(line,part_no) VALUES(?,?)').run(line, part);
       const r = this.db.prepare(`INSERT INTO entries(line,part_no,entry_ts,entered_by,sheet_rev,sheet_revised,hmi_file,notes,source,reason,photo_path)
@@ -652,7 +743,7 @@ class SetupService {
     const fm = new Map(fields.map((f) => [f.key, f]));
     const entries = this.db.prepare('SELECT * FROM entries ORDER BY line, part_no, entry_ts, id').all();
     const byId = new Map();
-    for (const e of entries) { e.values = {}; e.changed = {}; e.drift = {}; byId.set(e.id, e); }
+    for (const e of entries) { e.values = {}; e.changed = {}; e.drift = {}; e.range = {}; byId.set(e.id, e); }
     for (const r of this.db.prepare('SELECT * FROM entry_values').all()) {
       const e = byId.get(r.entry_id);
       if (e) e.values[r.key] = { setpoint: r.setpoint, actual: r.actual };
@@ -667,10 +758,14 @@ class SetupService {
         const f = fm.get(key);
         if (!f || !f.has_sp) continue;
         if (!C.blank(v.actual)) {
-          if (known[key] !== undefined && C.changed(known[key], v.actual)) e.changed[key] = { from: known[key], to: v.actual };
+          if (known[key] !== undefined && T.changed(f, known[key], v.actual)) e.changed[key] = { from: known[key], to: v.actual };
           known[key] = v.actual;
         }
-        if (C.drifted(v.setpoint, v.actual)) e.drift[key] = true;
+        if (T.drifted(f, v.setpoint, v.actual)) e.drift[key] = true;
+      }
+      for (const [key, v] of Object.entries(e.values)) {
+        const r = T.outOfRange(fm.get(key), v.actual);
+        if (r) e.range[key] = r;
       }
     }
     this._cache = { entries: live, all: entries, byId, fm };
@@ -743,7 +838,8 @@ class SetupService {
     const out = [];
     for (const [gk, list] of groups) {
       let streak = 0;
-      for (let i = list.length - 1; i >= 0 && C.drifted(list[i].v.setpoint, list[i].v.actual); i--) streak++;
+      const fld = fm.get(gk.split('|')[2]);
+      for (let i = list.length - 1; i >= 0 && T.drifted(fld, list[i].v.setpoint, list[i].v.actual); i--) streak++;
       if (streak < n) continue;
       const last = list[list.length - 1];
       const acked = acks.get(gk);
@@ -804,11 +900,11 @@ class SetupService {
       if (e.line !== Number(line) || e.part_no !== part) continue;
       const v = e.values[key];
       if (!v || C.blank(v.actual)) continue;
-      const num = parseFloat(v.actual);
-      if (Number.isNaN(num)) continue;
-      pts.push({ ts: e.entry_ts, actual: num, setpoint: C.blank(v.setpoint) || Number.isNaN(parseFloat(v.setpoint)) ? null : parseFloat(v.setpoint), entry_id: e.id });
+      const num = T.toNumber(f, v.actual);
+      if (num === null) continue;
+      pts.push({ ts: e.entry_ts, actual: num, setpoint: T.toNumber(f, v.setpoint), entry_id: e.id });
     }
-    return { key, label: f?.label || key, unit: f?.unit || '', points: pts };
+    return { key, label: f?.label || key, unit: f?.unit || '', kind: f?.kind || 'number', points: pts };
   }
   // One series per line (that line's part with the most data for the field).
   compareTrend({ key, part }) {
@@ -816,18 +912,18 @@ class SetupService {
     const best = new Map();
     for (const e of this._all().entries) {
       const v = e.values[key];
-      if (!v || C.blank(v.actual) || Number.isNaN(parseFloat(v.actual))) continue;
+      if (!v || T.toNumber(f, v.actual) === null) continue;
       if (part && e.part_no !== part && this.allParts().some((p) => p.part_no === part)) continue;
       const k = `${e.line}|${e.part_no}`;
       if (!best.has(k)) best.set(k, { line: e.line, part_no: e.part_no, points: [] });
-      best.get(k).points.push({ ts: e.entry_ts, actual: parseFloat(v.actual) });
+      best.get(k).points.push({ ts: e.entry_ts, actual: T.toNumber(f, v.actual) });
     }
     const perLine = new Map();
     for (const s of best.values()) {
       const cur = perLine.get(s.line);
       if (!cur || s.points.length > cur.points.length) perLine.set(s.line, s);
     }
-    return { key, label: f?.label || key, unit: f?.unit || '', series: [...perLine.values()].sort((a, b) => a.line - b.line) };
+    return { key, label: f?.label || key, unit: f?.unit || '', kind: f?.kind || 'number', series: [...perLine.values()].sort((a, b) => a.line - b.line) };
   }
 
   // ---------- export ----------
@@ -981,6 +1077,23 @@ class SetupService {
       this.audit('import', `${path.basename(file)}: ${added} entries, ${skipped} duplicates skipped, ${newFields} new fields`);
       return { added, skipped, newFields };
     } finally { src.close(); }
+  }
+
+  // ---------- Excel form templates ----------
+  // opts: { forms: 'all' | [form numbers], blank: true } -> .xlsx bytes
+  exportTemplate(opts = {}) { return Tpl.buildTemplate(this, opts); }
+  // What importing this workbook would do. Writes nothing.
+  previewTemplate(file, opts = {}) {
+    if (!fs.existsSync(file)) throw new Error('File not found');
+    return Tpl.planTemplate(this, Tpl.parseTemplate(fs.readFileSync(file)), opts);
+  }
+  applyTemplate(file, opts = {}) {
+    const plan = this.previewTemplate(file, opts);
+    if (plan.errors.length) throw new Error(`The template has ${plan.errors.length} problem${plan.errors.length === 1 ? '' : 's'}; nothing was imported.`);
+    if (!plan.changed) return { applied: false, summary: plan.summary };
+    this.backupNow('pre-template', true);
+    Tpl.applyPlan(this, plan);
+    return { applied: true, summary: plan.summary };
   }
 
   // ---------- sample data ----------

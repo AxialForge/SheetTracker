@@ -18,11 +18,35 @@ Data lives in `%USERPROFILE%\.setup_tracker\` (`setups.db`, `config.json`, `back
 | **Data Entry** | Blank fill-in form per line's sheet form. Gray placeholders and a *Last* column show previous values; changed cells go yellow, actual ≠ setpoint orange. *Fill blanks with last values*, *Clear*, `Ctrl+S` |
 | **Data** | Filterable table sorted by line. Editable notes, reasons, photos. *Revise* (a new entry), *Correct* (replaces a wrong entry), *Void* (takes it out of change detection, with a reason; *Show voided* lists them) |
 | **Export** | CSV / XLSX (one part or all, date range, reasons) and the weekly change report (PDF, optional auto-create on app start) |
-| **Forms** | Add, renumber, copy and delete forms; choose which fields each form carries and whether each is *Tracked* (asked every entry) or *Set once* (asked on the first entry for a Line + Part); add, edit or remove fields |
+| **Forms** | Add, renumber, copy and delete forms; choose which fields each form carries and whether each is *Tracked* (asked every entry) or *Set once* (asked on the first entry for a Line + Part); add, edit or remove fields; download a form as an Excel template and import an edited one back |
 | **Settings** | Fields (hide / rename / add for all forms), line → form map, parts (rename, or merge two spellings into one history), optional features, backup & restore, audit log, theme, date format, sample data, import of the v3 Python database |
 | **About** | Version, local-data statement, roadmap |
 
 Change rules (`docs/SPEC.md` §4): each setting's actual is compared to the last known non-blank value for that Line + Part; blanks are ignored; `2300` equals `2300.0`; text ignores case and extra spaces; readings (heat #, PTP, tonnage, …) never count as changes; entries are append-only (a wrong one is voided, not deleted). A Part No. with no history on its line asks for confirmation and suggests near matches, so a typo cannot silently start a new history.
+
+### Field types
+
+Every field has a type that decides its entry box, what is accepted, how "changed" is judged and whether it can be charted. Values are stored in one canonical form, so `6:05 PM` and `18:05` are the same value.
+
+| Type | Entry | Accepts | Charted |
+|---|---|---|---|
+| Number | text | `2250`, `14.25`, `1,200` | yes |
+| Text | text + suggestions | anything (case/spacing matched to known spellings) | – |
+| Choice | dropdown | one of the field's pick-list | – |
+| Yes / No | dropdown | Yes, No (also OK / NG, Pass / Fail) | – |
+| Rating | dropdown | whole number 1–N (scale and floor are per field); `4/5` reads as 4 | yes |
+| Ratio | text | `3/5`, `3 of 5` | yes |
+| Time of day | time picker | `18:05`, `6:05 PM`, `0605` | yes |
+| Duration | text | seconds, `1:30`, `1:02:03`, `1m30s` (stored as seconds) | yes |
+| Date | date picker | `2026-03-09`, `3/9/2026` | – |
+
+Number, Duration and Time of day can have a min / max: a value outside it is outlined, never blocked. A value that does not fit its type is refused on save with the field named.
+
+### Excel templates
+
+Forms → **Excel template** downloads a form (or all of them) as a workbook, one row per field: Section, Field, Type, Unit, Entry (Setting / Reading), Role (Tracked / Set once), Options, Min, Max, plus a Forms sheet (name, notes, lines). Edit or add rows in Excel (the Type, Entry and Role cells are dropdowns), then **Import template…**. A preview lists every new, edited and re-pointed item first; stored entries are never touched. Rows keep their hidden **Key** so a rename stays a rename; leave Key blank for new fields. Fields missing from the workbook are only taken off a form if you tick the option.
+
+`templates/` has ready-made files: `blank-form-template.xlsx` (instructions + headers) and `press-setup-forms.xlsx` (the four Viking Forge forms). Regenerate them with `npm run templates`.
 
 Backups are taken on save (max one per 5 min), before restore / import / migration, kept to the newest 100. Restore runs an integrity check and backs up the current database first. Put the backup folder on a different drive (Settings → Backup & restore).
 
@@ -33,6 +57,7 @@ npm install
 npm start               # run the app
 npm test                # unit tests (node:test)
 npm run screenshots     # headless smoke run of every tab in every theme -> docs/screenshots
+npm run templates       # regenerate templates/*.xlsx
 npm run dist            # Windows installer in dist/ (run on Windows; Linux needs wine)
 ```
 
