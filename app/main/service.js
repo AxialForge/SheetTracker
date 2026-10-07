@@ -8,7 +8,7 @@ const { DatabaseSync } = require('node:sqlite');
 const C = require('../shared/compare');
 const F = require('./fields');
 
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 const ROLES = ['tracked', 'initial']; // tracked = changes day to day; initial = set once when a Line+Part is first entered
 const BACKUP_THROTTLE_MS = 5 * 60 * 1000;
 const BACKUP_KEEP = 100;
@@ -23,6 +23,32 @@ function stamp(d = new Date()) {
   return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
 }
 const safe = (s) => String(s).replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 60);
+
+// Part numbers: trimmed with inner whitespace collapsed. "Fold" ignores case; "loose" also ignores punctuation and spaces.
+const partNorm = (s) => C.norm(s);
+const partFold = (s) => partNorm(s).toLowerCase();
+const partLoose = (s) => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+function editDistance(a, b) {
+  if (a === b) return 0;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    prev = cur;
+  }
+  return prev[b.length];
+}
+// Pick-list text as stored on a field: one value per line, no blanks, no case-insensitive duplicates.
+function choicesText(v) {
+  const raw = Array.isArray(v) ? v : String(v ?? '').split(/[\n;]/);
+  const seen = new Set();
+  const out = [];
+  for (const item of raw) {
+    const t = C.norm(item);
+    if (t && !seen.has(t.toLowerCase())) { seen.add(t.toLowerCase()); out.push(t); }
+  }
+  return out.join('\n');
+}
 
 function migrate(db) {
   let v = db.prepare('PRAGMA user_version').get().user_version;
@@ -62,6 +88,22 @@ function migrate(db) {
         role TEXT NOT NULL DEFAULT 'tracked' CHECK (role IN ('tracked','initial')), PRIMARY KEY(form_no, key));
       CREATE INDEX IF NOT EXISTS ix_form_fields_key ON form_fields(key);
       PRAGMA user_version = 4;`);
+  }
+  if (v < 5) {
+    // Voiding keeps an entry on record but takes it out of change detection; pick-lists for text fields.
+    const have = (table) => db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+    const ecols = have('entries');
+    const add = (name, ddl) => { if (!ecols.includes(name)) db.exec(`ALTER TABLE entries ADD COLUMN ${ddl}`); };
+    add('voided', 'voided INTEGER NOT NULL DEFAULT 0');
+    add('void_reason', "void_reason TEXT NOT NULL DEFAULT ''");
+    add('voided_ts', "voided_ts TEXT NOT NULL DEFAULT ''");
+    add('corrected_by', 'corrected_by INTEGER');
+    if (!have('fields').includes('choices')) db.exec("ALTER TABLE fields ADD COLUMN choices TEXT NOT NULL DEFAULT ''");
+    db.exec('CREATE INDEX IF NOT EXISTS ix_entry_values_key ON entry_values(key)');
+    const relabel = db.prepare('UPDATE fields SET label=? WHERE key=? AND label=?');
+    for (const [key, from, to] of F.RELABEL_V5) relabel.run(to, key, from);
+    db.prepare("UPDATE fields SET unit='µF' WHERE key='capacitance' AND (unit IS NULL OR unit='')").run();
+    db.exec('PRAGMA user_version = 5;');
   }
 }
 
@@ -242,9 +284,10 @@ class SetupService {
       section: patch.section ?? cur.section,
       kind: patch.kind ?? cur.kind,
       has_sp: patch.has_sp === undefined ? cur.has_sp : (patch.has_sp ? 1 : 0),
+      choices: patch.choices === undefined ? cur.choices : choicesText(patch.choices),
     };
-    this.db.prepare('UPDATE fields SET label=?, visible=?, unit=?, section=?, kind=?, has_sp=? WHERE key=?')
-      .run(next.label, next.visible, next.unit, next.section, next.kind, next.has_sp, key);
+    this.db.prepare('UPDATE fields SET label=?, visible=?, unit=?, section=?, kind=?, has_sp=?, choices=? WHERE key=?')
+      .run(next.label, next.visible, next.unit, next.section, next.kind, next.has_sp, next.choices, key);
     this.audit('field-update', `${key}: ${JSON.stringify(patch)}`);
     this._cache = null;
     return this.getFields();
@@ -392,54 +435,194 @@ class SetupService {
     const r = this.db.prepare('SELECT form_no FROM line_forms WHERE line=?').get(Number(line));
     return r ? r.form_no : null;
   }
+  // Parts that have at least one live (not voided) entry.
   listParts(line) {
+    const live = 'EXISTS (SELECT 1 FROM entries e WHERE e.line=p.line AND e.part_no=p.part_no AND e.voided=0)';
     const rows = line
-      ? this.db.prepare('SELECT part_no FROM parts WHERE line=? ORDER BY part_no').all(Number(line))
-      : this.db.prepare('SELECT DISTINCT part_no FROM parts ORDER BY part_no').all();
+      ? this.db.prepare(`SELECT part_no FROM parts p WHERE line=? AND ${live} ORDER BY part_no`).all(Number(line))
+      : this.db.prepare(`SELECT DISTINCT part_no FROM parts p WHERE ${live} ORDER BY part_no`).all();
     return rows.map((r) => r.part_no);
   }
-  allParts() { return this.db.prepare('SELECT line, part_no FROM parts ORDER BY line, part_no').all(); }
+  allParts() {
+    return this.db.prepare(`SELECT line, part_no FROM parts p WHERE EXISTS
+      (SELECT 1 FROM entries e WHERE e.line=p.line AND e.part_no=p.part_no AND e.voided=0) ORDER BY line, part_no`).all();
+  }
+  // Live entry count and first/last timestamps for every Line + Part.
+  listPartsDetailed() {
+    return this.db.prepare(`SELECT line, part_no, COUNT(*) entries, MIN(entry_ts) first_ts, MAX(entry_ts) last_ts
+      FROM entries WHERE voided=0 GROUP BY line, part_no ORDER BY line, part_no`).all()
+      .map((r) => ({ ...r, entries: Number(r.entries) }));
+  }
+  // The stored spelling of a part on a line when it matches ignoring case and spacing; otherwise the part as typed.
+  _canonPart(line, part, except) {
+    const rows = this.db.prepare('SELECT part_no FROM parts WHERE line=?').all(Number(line)).map((r) => r.part_no).filter((p) => p !== except);
+    if (rows.includes(part)) return part;
+    return rows.find((p) => partFold(p) === partFold(part)) || part;
+  }
+  // Before saving: is this a part we already have on this line, and if not, is it close to one (a likely typo)?
+  checkPart(line, part) {
+    line = Number(line);
+    const p = partNorm(part);
+    const out = { exists: false, canonical: null, similar: [], otherLines: [] };
+    if (!line || !p) return out;
+    const stats = this.listPartsDetailed();
+    const mine = stats.filter((s) => s.line === line);
+    const hit = mine.find((s) => s.part_no === p) || mine.find((s) => partFold(s.part_no) === partFold(p));
+    if (hit) return { ...out, exists: true, canonical: hit.part_no };
+    const loose = partLoose(p);
+    out.similar = mine
+      .map((s) => ({ ...s, dist: partLoose(s.part_no) === loose ? 0 : editDistance(partLoose(s.part_no), loose) }))
+      .filter((s) => s.dist <= 1)
+      .sort((a, b) => a.dist - b.dist || b.entries - a.entries)
+      .slice(0, 5)
+      .map(({ dist, ...s }) => s);
+    out.otherLines = stats.filter((s) => s.line !== line && partFold(s.part_no) === partFold(p)).map((s) => ({ line: s.line, entries: s.entries }));
+    return out;
+  }
+  // Change a part number on one line. If the new number already exists there, the two histories are merged.
+  // Entry values are never edited; only the part number they hang off moves. Audit-logged.
+  renamePart(line, from, to) {
+    line = Number(line);
+    const target = partNorm(to);
+    if (!line) throw new Error('Line is required');
+    if (!target) throw new Error('New part number is required');
+    const count = (p) => Number(this.db.prepare('SELECT COUNT(*) c FROM entries WHERE line=? AND part_no=?').get(line, p).c);
+    const moved = count(from);
+    if (!moved && !this.db.prepare('SELECT 1 FROM parts WHERE line=? AND part_no=?').get(line, from)) throw new Error(`Part ${from} was not found on line ${line}.`);
+    if (target === from) return { moved: 0, merged: false, part_no: from };
+    const dest = this._canonPart(line, target, from);
+    const merged = !!this.db.prepare('SELECT 1 FROM parts WHERE line=? AND part_no=?').get(line, dest);
+    this._tx(() => {
+      this.db.prepare('UPDATE entries SET part_no=? WHERE line=? AND part_no=?').run(dest, line, from);
+      this.db.prepare('INSERT OR IGNORE INTO parts(line,part_no) VALUES(?,?)').run(line, dest);
+      this.db.prepare('DELETE FROM parts WHERE line=? AND part_no=?').run(line, from);
+      this.db.prepare('DELETE FROM drift_ack WHERE line=? AND part_no=?').run(line, from);
+    });
+    this.audit(merged ? 'part-merge' : 'part-rename', `L${line} ${from} -> ${dest} (${moved} entr${moved === 1 ? 'y' : 'ies'})`);
+    return { moved, merged, part_no: dest };
+  }
 
   // ---------- entries ----------
+  // Known spellings for text fields: the field's pick-list first, then values already stored (most used first).
+  // key -> Map(lower-case normalized text -> spelling to use).
+  _textCanons(fields) {
+    const out = new Map();
+    const text = fields.filter((f) => f.kind === 'text' && f.has_sp);
+    for (const f of text) {
+      const m = new Map();
+      for (const c of String(f.choices || '').split('\n')) if (c && !m.has(c.toLowerCase())) m.set(c.toLowerCase(), c);
+      out.set(f.key, m);
+    }
+    if (!text.length) return out;
+    const marks = text.map(() => '?').join(',');
+    const rows = this.db.prepare(`SELECT key, v, COUNT(*) n FROM (
+        SELECT key, setpoint v FROM entry_values UNION ALL SELECT key, actual v FROM entry_values)
+      WHERE key IN (${marks}) AND v IS NOT NULL AND TRIM(v) <> '' GROUP BY key, v ORDER BY n DESC`).all(...text.map((f) => f.key));
+    for (const r of rows) {
+      const t = C.norm(r.v);
+      const m = out.get(r.key);
+      if (!m.has(t.toLowerCase())) m.set(t.toLowerCase(), t);
+    }
+    return out;
+  }
+  // Suggestions for the entry form: text field key -> spellings, pick-list first.
+  valueSuggestions() {
+    const out = {};
+    for (const [key, m] of this._textCanons(this.getFields())) if (m.size) out[key] = [...m.values()].slice(0, 60);
+    return out;
+  }
+
+  // e.corrects: id of an earlier entry this one replaces. The earlier entry is voided (with e.correct_reason)
+  // in the same transaction, so it drops out of change detection but stays on record.
   saveEntry(e) {
     const line = parseInt(e.line, 10);
-    const part = String(e.part_no || '').trim();
+    let part = partNorm(e.part_no);
     if (!line) throw new Error('Line # is required');
     if (!part) throw new Error('Part No. is required');
     if (!this.db.prepare('SELECT 1 FROM line_forms WHERE line=?').get(line)) throw new Error(`Line ${line} is not configured (Settings → Line → Form).`);
-    const fieldKeys = new Set(this.getFields().map((f) => f.key));
+    part = this._canonPart(line, part);
+    const fields = this.getFields();
+    const fieldMap = new Map(fields.map((f) => [f.key, f]));
+    const canons = this._textCanons(fields);
+    const tidy = (f, v) => {
+      if (C.blank(v)) return null;
+      if (f.kind !== 'text') return String(v).trim();
+      const t = C.norm(v);
+      return canons.get(f.key)?.get(t.toLowerCase()) ?? t;
+    };
     const values = [];
     for (const [key, v] of Object.entries(e.values || {})) {
-      if (!fieldKeys.has(key)) continue;
-      const sp = C.blank(v.setpoint) ? null : String(v.setpoint).trim();
-      const ac = C.blank(v.actual) ? null : String(v.actual).trim();
+      const f = fieldMap.get(key);
+      if (!f) continue;
+      const sp = tidy(f, v.setpoint);
+      const ac = tidy(f, v.actual);
       if (sp === null && ac === null) continue;
       values.push([key, sp, ac]);
     }
     const notes = String(e.notes || '').trim();
     if (!values.length && !notes) throw new Error('Nothing to save: enter at least one value or a note.');
-    const ts = e.entry_ts || tsLocal(this.now());
-    const before = this.latestValues(line, part, ts);
-    let changes = 0;
-    const fieldMap = new Map(this.getFields().map((f) => [f.key, f]));
-    for (const [key, , ac] of values) {
-      if (fieldMap.get(key).has_sp && ac !== null && before[key] && C.changed(before[key].actual, ac)) changes++;
+    const correctReason = String(e.correct_reason || '').trim();
+    if (e.corrects) {
+      this._voidable(e.corrects);
+      if (!correctReason) throw new Error('A reason is required to correct an entry.');
     }
+    const ts = e.entry_ts || tsLocal(this.now());
     let photo = '';
     if (e.photo_src) photo = this._storePhoto(e.photo_src, line, part, ts);
+    let changes = 0;
+    let old = null;
     const id = this._tx(() => {
+      if (e.corrects) {
+        old = this._voidable(e.corrects);
+        this.db.prepare('UPDATE entries SET voided=1, void_reason=?, voided_ts=? WHERE id=?').run(correctReason, tsLocal(this.now()), old.id);
+        this._cache = null;
+      }
+      const before = this.latestValues(line, part, ts); // after the void, so a mistyped entry is not the baseline
+      for (const [key, , ac] of values) {
+        if (fieldMap.get(key).has_sp && ac !== null && before[key] && C.changed(before[key].actual, ac)) changes++;
+      }
       this.db.prepare('INSERT OR IGNORE INTO parts(line,part_no) VALUES(?,?)').run(line, part);
       const r = this.db.prepare(`INSERT INTO entries(line,part_no,entry_ts,entered_by,sheet_rev,sheet_revised,hmi_file,notes,source,reason,photo_path)
         VALUES(?,?,?,?,?,?,?,?,?,?,?)`).run(line, part, ts, e.entered_by || '', e.sheet_rev || '', e.sheet_revised || '',
-        e.hmi_file || '', notes, e.source || 'manual', e.reason || '', photo);
+        e.hmi_file || '', notes, e.corrects ? 'correction' : (e.source || 'manual'), e.reason || '', photo);
       const id = Number(r.lastInsertRowid);
       const ins = this.db.prepare('INSERT INTO entry_values(entry_id,key,setpoint,actual) VALUES(?,?,?,?)');
       values.forEach(([k, sp, ac]) => ins.run(id, k, sp, ac));
+      if (old) this.db.prepare('UPDATE entries SET corrected_by=? WHERE id=?').run(id, old.id);
       return id;
     });
-    this.audit('entry-add', `#${id} L${line} ${part} ${ts} (${values.length} values, ${changes} changes)`, e.entered_by);
+    if (old) this.audit('entry-void', `#${old.id} L${old.line} ${old.part_no} ${old.entry_ts}: ${correctReason} (corrected by #${id})`, e.entered_by);
+    this.audit('entry-add', `#${id} L${line} ${part} ${ts} (${values.length} values, ${changes} changes${old ? `, corrects #${old.id}` : ''})`, e.entered_by);
     if (!e.noBackup) { try { this.backupNow('auto', false); } catch { /* a failed auto backup must never block saving */ } }
     return { id, changes };
+  }
+
+  _voidable(id) {
+    const cur = this.db.prepare('SELECT * FROM entries WHERE id=?').get(Number(id));
+    if (!cur) throw new Error('Entry not found');
+    if (cur.voided) throw new Error(`Entry #${cur.id} is already voided.`);
+    return cur;
+  }
+  // Take a wrong entry out of change detection, trends, drift, exports and reports. It stays on record with its reason.
+  voidEntry(id, reason) {
+    const why = String(reason || '').trim();
+    if (!why) throw new Error('A reason is required to void an entry.');
+    const cur = this._voidable(id);
+    this.db.prepare('UPDATE entries SET voided=1, void_reason=?, voided_ts=? WHERE id=?').run(why, tsLocal(this.now()), cur.id);
+    this._cache = null;
+    this.audit('entry-void', `#${cur.id} L${cur.line} ${cur.part_no} ${cur.entry_ts}: ${why}`);
+    return true;
+  }
+  // Undo a void. Not offered for an entry that a correction already replaced.
+  restoreEntry(id) {
+    const cur = this.db.prepare('SELECT * FROM entries WHERE id=?').get(Number(id));
+    if (!cur) throw new Error('Entry not found');
+    if (!cur.voided) throw new Error(`Entry #${cur.id} is not voided.`);
+    if (cur.corrected_by) throw new Error(`Entry #${cur.id} was replaced by entry #${cur.corrected_by}. Void that one instead.`);
+    this.db.prepare("UPDATE entries SET voided=0, void_reason='', voided_ts='' WHERE id=?").run(cur.id);
+    this._cache = null;
+    this.audit('entry-restore', `#${cur.id} L${cur.line} ${cur.part_no} ${cur.entry_ts} (was voided: ${cur.void_reason})`);
+    return true;
   }
 
   _storePhoto(src, line, part, ts) {
@@ -475,7 +658,8 @@ class SetupService {
       if (e) e.values[r.key] = { setpoint: r.setpoint, actual: r.actual };
     }
     const lastKnown = new Map();
-    for (const e of entries) {
+    const live = entries.filter((e) => !e.voided); // voided entries never take part in change or drift detection
+    for (const e of live) {
       const lp = `${e.line}|${e.part_no}`;
       if (!lastKnown.has(lp)) lastKnown.set(lp, {});
       const known = lastKnown.get(lp);
@@ -489,7 +673,7 @@ class SetupService {
         if (C.drifted(v.setpoint, v.actual)) e.drift[key] = true;
       }
     }
-    this._cache = { entries, byId, fm };
+    this._cache = { entries: live, all: entries, byId, fm };
     return this._cache;
   }
 
@@ -515,7 +699,7 @@ class SetupService {
   }
 
   listEntries(f = {}) {
-    let rows = this._all().entries;
+    let rows = f.includeVoided ? this._all().all : this._all().entries;
     if (f.line) rows = rows.filter((e) => e.line === Number(f.line));
     if (f.part) rows = rows.filter((e) => e.part_no === f.part);
     if (f.from) rows = rows.filter((e) => e.entry_ts.slice(0, 10) >= f.from);

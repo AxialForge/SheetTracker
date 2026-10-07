@@ -70,5 +70,29 @@ ST.select = function select(options, value, attrs = {}) {
   return s;
 };
 
+// A small text prompt (window.prompt is not available in Electron). Resolves to the trimmed text, or null if cancelled.
+ST.ask = function ask({ title, message = '', label, value = '', ok = 'OK', required = true }) {
+  return new Promise((resolve) => {
+    const input = ST.h('input', { type: 'text', value, 'aria-label': label, autocomplete: 'off' });
+    const done = (v) => { overlay.remove(); resolve(v); };
+    const submit = () => {
+      const v = input.value.trim();
+      if (required && !v) { input.classList.add('bad'); input.focus(); return; }
+      done(v);
+    };
+    const overlay = ST.h('div', { class: 'modal-back', onmousedown: (e) => { if (e.target === overlay) done(null); },
+      onkeydown: (e) => { if (e.key === 'Escape') done(null); else if (e.key === 'Enter' && e.target === input) { e.preventDefault(); submit(); } } },
+    ST.h('div', { class: 'modal card', role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+      ST.h('h3', { text: title }),
+      message ? ST.h('p', { class: 'muted', text: message }) : null,
+      ST.h('label', { class: 'fld' }, ST.h('span', { text: label }), input),
+      ST.h('div', { class: 'toolbar end' },
+        ST.h('button', { class: 'btn ghost', type: 'button', text: 'Cancel', onclick: () => done(null) }),
+        ST.h('button', { class: 'btn primary', type: 'button', text: ok, onclick: submit }))));
+    document.body.append(overlay);
+    input.focus(); input.select();
+  });
+};
+
 ST.card = (title, body, opts = {}) => ST.h('section', { class: `card ${opts.class || ''}` },
   title ? ST.h('header', { class: 'card-h' }, ST.h('h3', { text: title }), opts.actions || null) : null, body);

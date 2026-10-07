@@ -77,8 +77,15 @@ const READINGS = [
 // Measured tonnage grid: 3 pieces x stations 1-3 (parts have 2 or 3 hits).
 const TONNAGE = [];
 for (let p = 1; p <= 3; p++) {
-  for (let s = 1; s <= 3; s++) TONNAGE.push([`ton_p${p}_s${s}`, `Piece ${p} / Station ${s}`, 'tonnage', 'number', 'T', 0]);
+  for (let s = 1; s <= 3; s++) TONNAGE.push([`ton_p${p}_s${s}`, `Measured tonnage - piece ${p} / station ${s}`, 'tonnage', 'number', 'T', 0]);
 }
+
+// Labels changed in v0.2.0 so the tonnage setting and the measured grid read differently.
+// Existing databases are only relabelled when the field still carries the old factory name.
+const RELABEL_V5 = [
+  ...[1, 2, 3].map((s) => [`tonnage_s${s}`, `Tonnage - station ${s}`, `Tonnage setting - station ${s}`]),
+  ...TONNAGE.map((f) => [f[0], f[1].replace('Measured tonnage - piece ', 'Piece ').replace(' / station ', ' / Station '), f[1]]),
+];
 
 // ---- Real setup-sheet fields (from the four blank forms). Applied on fresh installs; existing installs use "Apply sheet fields".
 const FIELD_MAP_ID = 'vf1';
@@ -87,9 +94,9 @@ const CATALOG = [
   ['station1_label', 'Station 1 label', 'stations', 'text', '', 1],
   ['station2_label', 'Station 2 label', 'stations', 'text', '', 1],
   ['station3_label', 'Station 3 label', 'stations', 'text', '', 1],
-  ['tonnage_s1', 'Tonnage - station 1', 'stations', 'number', 'T', 1],
-  ['tonnage_s2', 'Tonnage - station 2', 'stations', 'number', 'T', 1],
-  ['tonnage_s3', 'Tonnage - station 3', 'stations', 'number', 'T', 1],
+  ['tonnage_s1', 'Tonnage setting - station 1', 'stations', 'number', 'T', 1],
+  ['tonnage_s2', 'Tonnage setting - station 2', 'stations', 'number', 'T', 1],
+  ['tonnage_s3', 'Tonnage setting - station 3', 'stations', 'number', 'T', 1],
   ['leave_tongs', 'Leave tongs in', 'stations', 'text', '', 1],
   ['special_forge', 'Special forge instruction', 'instr', 'text', '', 1],
   ['special_trim', 'Special trim instruction', 'instr', 'text', '', 1],
@@ -106,7 +113,7 @@ const CATALOG = [
   ['billet_diameter', 'Billet diameter', 'heat', 'number', 'in', 1],
   ['billet_length', 'Billet length', 'heat', 'number', 'in', 1],
   ['billet_weight', 'Billet weight', 'heat', 'number', 'lb', 1],
-  ['capacitance', 'Capacitance', 'heat', 'number', '', 1],
+  ['capacitance', 'Capacitance', 'heat', 'number', 'µF', 1],
   ['roller_hi_delay', 'Roller track hi delay', 'heat', 'number', 's', 1],
   ['roller_low_delay', 'Roller track low delay', 'heat', 'number', 's', 1],
   ['coil_exit_timer', 'Coil exit photo timer', 'heat', 'number', 's', 1],
@@ -213,7 +220,7 @@ const DEFAULT_SETTINGS = {
 const REASONS = ['Die change', 'Material', 'Quality', 'Maintenance', 'Other'];
 
 module.exports = {
-  SECTIONS, BASE, FORM_SPECIFIC, READINGS, TONNAGE, FORMS, DEFAULT_LINE_FORMS, PRESS_TONNAGE,
+  SECTIONS, BASE, FORM_SPECIFIC, READINGS, TONNAGE, RELABEL_V5, FORMS, DEFAULT_LINE_FORMS, PRESS_TONNAGE,
   DEFAULT_SETTINGS, REASONS, formKeys, allDefaults,
   FIELD_MAP_ID, CATALOG, TRACKED_ALL, TRACKED_BY_FORM, INITIAL_ALL, INITIAL_BY_FORM, FORM_META, formLayout, catalogDefaults,
 };

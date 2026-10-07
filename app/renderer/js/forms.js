@@ -61,7 +61,7 @@ ST.tabs.forms = {
     let lastSec = null;
     const sorted = formFields.slice().sort((a, b) => (secOrder.get(a.section) ?? 99) - (secOrder.get(b.section) ?? 99) || a.sort - b.sort);
     for (const f of sorted) {
-      if (f.section !== lastSec) { lastSec = f.section; rows.push(h('tr', { class: 'sec-row' }, h('th', { colspan: 7, text: secLabel(f.section) }))); }
+      if (f.section !== lastSec) { lastSec = f.section; rows.push(h('tr', { class: 'sec-row' }, h('th', { colspan: 8, text: secLabel(f.section) }))); }
       rows.push(h('tr', { class: f.visible ? '' : 'dim' },
         h('td', {}, h('input', { type: 'text', class: 'cell left', value: f.label, 'aria-label': `Name of ${f.key}`, onchange: (e) => patch(f, { label: e.target.value })() })),
         h('td', {}, ST.select(sections.map((s) => [s.key, s.label]), f.section, { 'aria-label': `${f.label} section`, onchange: guard(async (e) => { await ST.api('updateField', f.key, { section: e.target.value }); await again(); }) })),
@@ -69,10 +69,14 @@ ST.tabs.forms = {
         h('td', {}, ST.select([['1', 'Setting'], ['0', 'Reading']], String(f.has_sp), { 'aria-label': `${f.label} setting or reading`, title: 'Settings have a sheet setpoint and are change-tracked; readings are actual-only', onchange: (e) => patch(f, { has_sp: e.target.value === '1' })() })),
         h('td', {}, h('input', { type: 'text', class: 'cell left short', value: f.unit || '', 'aria-label': `${f.label} unit`, onchange: (e) => patch(f, { unit: e.target.value })() })),
         h('td', {}, roleSel(f)),
+        h('td', {}, f.kind === 'text' && f.has_sp
+          ? h('input', { type: 'text', class: 'cell left pick-list', value: String(f.choices || '').split('\n').filter(Boolean).join('; '), placeholder: 'e.g. Standard; Heavy', 'aria-label': `${f.label} pick-list`,
+            title: 'Known values, separated by semicolons. They are offered on Data Entry, and typed values are matched to them ignoring case and spacing.', onchange: (e) => patch(f, { choices: e.target.value })() })
+          : null),
         h('td', {}, h('button', { class: 'btn ghost sm', text: 'Remove', title: 'Take this field off the form. Stored values are kept.', onclick: guard(async () => { await ST.api('removeFormField', cur.form_no, f.key); await again(); }) }))));
     }
     const table = formFields.length
-      ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'data-t' }, h('thead', {}, h('tr', {}, ['Name', 'Section', 'Type', 'Kind', 'Unit', 'Role', ''].map((t) => h('th', { text: t })))), h('tbody', {}, rows)))
+      ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'data-t' }, h('thead', {}, h('tr', {}, ['Name', 'Section', 'Type', 'Kind', 'Unit', 'Role', 'Pick-list (text)', ''].map((t) => h('th', { text: t })))), h('tbody', {}, rows)))
       : h('p', { class: 'muted', text: 'This form has no fields yet. Add some below.' });
     const legend = h('p', { class: 'muted', text: 'Tracked: changes day to day, asked on every entry. Set once: fixed setup values, asked on the first entry for a Line + Part and available on later entries with “Show setup fields”.' });
     const fieldsCard = ST.card(`Fields on form ${cur.form_no} (${cur.tracked} tracked · ${cur.initial} set once)`, h('div', { class: 'col tight' }, legend, table));

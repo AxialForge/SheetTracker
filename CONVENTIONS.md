@@ -7,7 +7,7 @@
   - `app/main/main.js` — window, IPC allow-list, file dialogs, PDF.
   - `app/shared/compare.js` — equality rules shared by main and renderer.
   - `app/renderer/` — one file per tab in `js/`.
-- **Rules that must not drift** (see `docs/SPEC.md` §4): readings never count as changes; blanks are ignored (carry-forward); equality is numeric-aware; entries are append-only; notes edits are audit-logged.
+- **Rules that must not drift** (see `docs/SPEC.md` §4): readings never count as changes; blanks are ignored (carry-forward); equality is numeric-aware and text-normalized; entries are append-only (a wrong entry is voided with a reason, never deleted or overwritten); notes edits, voids and part renames are audit-logged.
 - **Schema changes**: bump `SCHEMA_VERSION`, add a step in `migrate()`, add a migration test. The app backs up before migrating.
 - **Before pushing**: `npm test` and `npm run screenshots` must pass.
 - **Releases**: bump `version` in `package.json`, then `git tag vX.Y.Z && git push origin vX.Y.Z`. CI builds `Setup Tracker-X.Y.Z-setup.exe`, `latest.yml` and the `.blockmap`.

@@ -16,13 +16,13 @@ Data lives in `%USERPROFILE%\.setup_tracker\` (`setups.db`, `config.json`, `back
 |---|---|
 | **Dashboard** | KPIs, trend chart (actual vs sheet setpoint, optional compare-lines), most-changed settings, drift alerts, recent changes, line status today |
 | **Data Entry** | Blank fill-in form per line's sheet form. Gray placeholders and a *Last* column show previous values; changed cells go yellow, actual ≠ setpoint orange. *Fill blanks with last values*, *Clear*, `Ctrl+S` |
-| **Data** | Filterable table sorted by line. Editable notes, reasons, photos, *Revise* (loads an entry as a new revision) |
+| **Data** | Filterable table sorted by line. Editable notes, reasons, photos. *Revise* (a new entry), *Correct* (replaces a wrong entry), *Void* (takes it out of change detection, with a reason; *Show voided* lists them) |
 | **Export** | CSV / XLSX (one part or all, date range, reasons) and the weekly change report (PDF, optional auto-create on app start) |
 | **Forms** | Add, renumber, copy and delete forms; choose which fields each form carries and whether each is *Tracked* (asked every entry) or *Set once* (asked on the first entry for a Line + Part); add, edit or remove fields |
-| **Settings** | Fields (hide / rename / add for all forms), line → form map, optional features, backup & restore, audit log, theme, date format, sample data, import of the v3 Python database |
+| **Settings** | Fields (hide / rename / add for all forms), line → form map, parts (rename, or merge two spellings into one history), optional features, backup & restore, audit log, theme, date format, sample data, import of the v3 Python database |
 | **About** | Version, local-data statement, roadmap |
 
-Change rules (`docs/SPEC.md` §4): each setting's actual is compared to the last known non-blank value for that Line + Part; blanks are ignored; `2300` equals `2300.0`; readings (heat #, PTP, tonnage, …) never count as changes; entries are append-only.
+Change rules (`docs/SPEC.md` §4): each setting's actual is compared to the last known non-blank value for that Line + Part; blanks are ignored; `2300` equals `2300.0`; text ignores case and extra spaces; readings (heat #, PTP, tonnage, …) never count as changes; entries are append-only (a wrong one is voided, not deleted). A Part No. with no history on its line asks for confirmation and suggests near matches, so a typo cannot silently start a new history.
 
 Backups are taken on save (max one per 5 min), before restore / import / migration, kept to the newest 100. Restore runs an integrity check and backs up the current database first. Put the backup folder on a different drive (Settings → Backup & restore).
 

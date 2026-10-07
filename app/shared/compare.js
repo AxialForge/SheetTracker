@@ -9,10 +9,15 @@
     return v === null || v === undefined || String(v).trim() === '';
   }
 
-  // Numeric-aware equality: 2300 == 2300.0; text compares trimmed, case-insensitive.
+  // Text as stored: trimmed, runs of whitespace collapsed to one space.
+  function norm(v) {
+    return String(v ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  // Numeric-aware equality: 2300 == 2300.0; text compares normalized, case-insensitive.
   function same(a, b) {
-    const x = String(a).trim();
-    const y = String(b).trim();
+    const x = norm(a);
+    const y = norm(b);
     if (NUM.test(x) && NUM.test(y)) return parseFloat(x) === parseFloat(y);
     return x.toLowerCase() === y.toLowerCase();
   }
@@ -29,5 +34,5 @@
     return !same(setpoint, actual);
   }
 
-  return { blank, same, changed, drifted };
+  return { blank, norm, same, changed, drifted };
 });

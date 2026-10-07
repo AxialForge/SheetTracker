@@ -50,7 +50,37 @@ app.whenReady().then(async () => {
   const csv = await run(`ST.main('report:create', new Date().toLocaleDateString('en-CA'))`);
   const pdfOk = fs.existsSync(csv.file) && fs.statSync(csv.file).size > 1000;
   console.log('saved', JSON.stringify(saved), 'pdf', csv.file, pdfOk);
-  const bad = errors.length || !pdfOk;
+  // v0.2.0 flows through the real renderer: new-part confirmation, correct, void
+  const flow = await run(`(async () => {
+    const E = ST.tabs.entry; const out = {};
+    E.S = null; await ST.show('entry');
+    await E.setLinePart('5', 'smoke-new-1');
+    out.banner = !!document.getElementById('newpart-note');
+    E.val('nitrogen').actual = '450';
+    await E.save();
+    out.blockedUntilConfirmed = (await ST.api('listEntries', { part: 'smoke-new-1' })).total === 0;
+    E.S.newPartOk = E.S.line + '|' + E.S.part;
+    await E.save();
+    const first = (await ST.api('listEntries', { part: 'smoke-new-1' })).rows[0];
+    out.saved = !!first;
+    await E.setLinePart('5', 'SMOKE-NEW-1');
+    out.sameSpelling = E.S.partInfo.exists && E.S.part === 'smoke-new-1';
+    E.prefill(first, true); await ST.show('entry');
+    E.val('nitrogen').actual = '455'; E.S.correctReason = 'smoke typo';
+    await E.save();
+    const live = (await ST.api('listEntries', { part: 'smoke-new-1' })).rows;
+    out.corrected = live.length === 1 && live[0].values.nitrogen.actual === '455';
+    const all = (await ST.api('listEntries', { part: 'smoke-new-1', includeVoided: true })).rows;
+    out.keptOnRecord = all.length === 2 && all.some((e) => e.voided && e.void_reason === 'smoke typo');
+    await ST.api('voidEntry', live[0].id, 'smoke void');
+    out.voided = (await ST.api('listEntries', { part: 'smoke-new-1' })).total === 0;
+    await ST.show('data'); await ST.show('settings');
+    out.partsCard = document.body.innerText.includes('Parts (');
+    return out;
+  })()`);
+  console.log('flow', JSON.stringify(flow));
+  const flowOk = Object.values(flow).every(Boolean);
+  const bad = errors.length || !pdfOk || !flowOk;
   if (errors.length) console.error('Renderer errors:\n' + errors.join('\n'));
   console.log(bad ? 'SMOKE FAILED' : `SMOKE OK (${THEMES.length * TABS.length} screenshots in docs/screenshots)`);
   app.exit(bad ? 1 : 0);

@@ -4,7 +4,7 @@ ST.tabs.settings = {
 
   async render(root) {
     const { h } = ST;
-    const [paths, backups, audit] = await Promise.all([ST.api('getPaths'), ST.api('listBackups'), ST.api('getAudit', 100)]);
+    const [paths, backups, audit, parts] = await Promise.all([ST.api('getPaths'), ST.api('listBackups'), ST.api('getAudit', 100), ST.api('listPartsDetailed')]);
     const s = ST.state.settings;
     const again = () => this.render(root);
     const guard = (fn) => async (...a) => { try { await fn(...a); } catch (e) { ST.fail(e); } };
@@ -44,6 +44,27 @@ ST.tabs.settings = {
         ST.select(forms.map(String), nl.form, { onchange: (e) => { nl.form = e.target.value; } }),
         h('button', { class: 'btn', text: 'Add line', onclick: guard(async () => { await ST.api('setLineForm', nl.line, nl.form); await ST.refreshCore(); again(); }) })),
       h('p', { class: 'muted', text: 'Create forms and choose which fields each one carries in the Forms tab.' })));
+
+    // ---- parts: fix a mistyped part number, or merge two spellings into one history
+    const renamePart = (p) => guard(async () => {
+      const to = await ST.ask({ title: `Rename ${p.part_no} (Line ${p.line})`, label: 'New part number', value: p.part_no, ok: 'Rename',
+        message: 'If the new number already exists on this line, the two histories are merged. Entry values are not changed.' });
+      if (!to || to === p.part_no) return;
+      const hit = await ST.api('checkPart', p.line, to);
+      if (hit.exists && hit.canonical !== p.part_no) {
+        const into = parts.find((x) => x.line === p.line && x.part_no === hit.canonical);
+        if (!confirm(`${hit.canonical} already exists on Line ${p.line} (${into?.entries ?? 0} entries).\n\nMerge the ${p.entries} entr${p.entries === 1 ? 'y' : 'ies'} of ${p.part_no} into it? Changes will be recalculated across the combined history.`)) return;
+      }
+      const r = await ST.api('renamePart', p.line, p.part_no, to);
+      ST.toast(r.merged ? `Merged into ${r.part_no}` : `Renamed to ${r.part_no}`);
+      await ST.refreshCore(); again();
+    });
+    const partRows = parts.map((p) => h('tr', {}, h('td', { class: 'mono', text: `Line ${p.line}` }), h('td', { text: p.part_no }),
+      h('td', { class: 'muted', text: `${p.entries} entr${p.entries === 1 ? 'y' : 'ies'}` }), h('td', { class: 'muted', text: `last ${ST.fmtDate(p.last_ts, true)}` }),
+      h('td', {}, h('button', { class: 'btn ghost sm', text: 'Rename / merge…', onclick: renamePart(p) }))));
+    const partsCard = ST.card(`Parts (${parts.length})`, h('div', {},
+      h('p', { class: 'muted', text: 'Part numbers are matched ignoring case and extra spaces. If a part was typed wrongly, rename it here; renaming onto an existing part merges the two histories.' }),
+      parts.length ? h('div', { class: 'tbl-wrap short' }, h('table', { class: 'data-t slim' }, h('tbody', {}, partRows))) : h('p', { class: 'muted', text: 'No parts yet.' })), { class: 'span2' });
 
     // ---- optional features
     const feat = (key, label, hint) => h('label', { class: 'feat' }, h('input', { type: 'checkbox', checked: s[`opt_${key}`] === '1', onchange: guard(async (e) => { await saveSetting(`opt_${key}`)(e); await again(); }) }), h('span', {}, h('b', { text: label }), h('small', { class: 'muted', text: hint })));
@@ -91,6 +112,6 @@ ST.tabs.settings = {
     const aRows = audit.map((a) => h('tr', {}, h('td', { class: 'nowrap muted', text: ST.fmtDate(a.ts.slice(0, 16).replace(' ', 'T')) }), h('td', { text: a.user }), h('td', { text: a.action }), h('td', { class: 'muted', text: a.detail })));
     const auditCard = ST.card('Audit log', h('div', { class: 'tbl-wrap short' }, h('table', { class: 'data-t slim' }, h('thead', {}, h('tr', {}, ['When (UTC)', 'User', 'Action', 'Detail'].map((t) => h('th', { text: t })))), h('tbody', {}, aRows))), { class: 'span2' });
 
-    root.replaceChildren(h('div', { class: 'grid' }, featCard, appear, lineCard, dataCard, backupCard, fieldsCard, auditCard));
+    root.replaceChildren(h('div', { class: 'grid' }, featCard, appear, lineCard, dataCard, partsCard, backupCard, fieldsCard, auditCard));
   },
 };

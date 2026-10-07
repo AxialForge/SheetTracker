@@ -121,7 +121,7 @@ test('mapping a line to a form that does not exist yet creates it with the defau
   assert.deepEqual(svc.fieldsForForm(10990).map((f) => f.key), k);
 });
 
-test('migration v3 -> v4 seeds forms from the old built-in rules and backs up first', () => {
+test('migration v3 -> v5 seeds forms from the old built-in rules and backs up first', () => {
   const dir = tmp();
   const a = new SetupService({ dataDir: dir, now: () => new Date('2026-03-18T12:00:00') });
   a.addField({ label: 'Coolant ppm', has_sp: false });
@@ -131,7 +131,7 @@ test('migration v3 -> v4 seeds forms from the old built-in rules and backs up fi
   db.exec('DROP TABLE form_fields; DROP TABLE forms; PRAGMA user_version = 3;');
   db.close();
   const b = new SetupService({ dataDir: dir, now: () => new Date('2026-03-18T12:00:00') });
-  assert.equal(b.db.prepare('PRAGMA user_version').get().user_version, 4);
+  assert.equal(b.db.prepare('PRAGMA user_version').get().user_version, 5);
   assert.deepEqual(Object.fromEntries(b.getForms().map((f) => [f.form_no, keys(b, f.form_no)])), expect);
   assert.ok(b.listBackups().some((x) => x.reason === 'pre-migrate'));
   b.close();

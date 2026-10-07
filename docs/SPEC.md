@@ -1,6 +1,6 @@
 # Setup Tracker — Spec
 
-> Status: v0.1.0 implements everything below on the Bracket stack (Electron + node:sqlite), replacing the v3 Python/PySide6 prototype. The one deviation: the kit ships dark themes only, so the "Light" theme in the mockup is not built; the default is the kit's `crimson` theme (dark, red accent). Sections 5 and 9 describe the old Python plan; the schema now lives in `app/main/service.js` and the build plan is done.
+> Status: v0.2.0 adds the data-integrity rules in §4 and §11 (part checks, text normalization and pick-lists, void / correct). v0.1.0 implements everything below on the Bracket stack (Electron + node:sqlite), replacing the v3 Python/PySide6 prototype. The one deviation: the kit ships dark themes only, so the "Light" theme in the mockup is not built; the default is the kit's `crimson` theme (dark, red accent). Sections 5 and 9 describe the old Python plan; the schema now lives in `app/main/service.js` and the build plan is done.
 
 ## 1. Who / why
 Joe, process engineer at Viking Forge (forging job shop). Manages press lines 1, 3, 4, 5, 7, 9, 11. Every day he gets checked-off press setup sheets (paper/scan). He wants to log them and see what changed day to day per Line + Part. Single user, all local Windows PC for now. Prefers direct, concise UI and docs.
@@ -27,6 +27,9 @@ Joe, process engineer at Viking Forge (forging job shop). Manages press lines 1,
 - Entry form is a **blank fill-in form**: gray placeholders + "Last" column show previous values; "Fill blanks with last values" fills settings only; "Clear form"; Ctrl+S.
 - Changed cells yellow; actual ≠ sheet setpoint orange (drift).
 - Entries append-only (edit = new revision, never overwrite). Notes editable in Data tab (audit-logged).
+- A wrong entry is **voided** with a required reason (or replaced by a **correction**, which voids the original in the same save). Voided entries stay on record but are excluded from change detection, drift, trends, exports, reports and the Last column, so the history is recalculated without them. Restoring a void is allowed unless a correction already replaced it. Every void and restore is audit-logged.
+- Text is compared and stored normalized: trimmed, inner whitespace collapsed, case-insensitive. A typed value that matches a known spelling (the field's pick-list first, then the most-used stored value) is saved in that spelling.
+- Part numbers match ignoring case and extra spaces and are saved in the spelling already on that line. A part with no history on its line asks for confirmation on Data Entry and offers near matches (one character off, or equal ignoring punctuation). Settings → Parts renames a part, or merges two spellings into one history; entry values are never edited.
 
 ## 5. Data model (existing v3, SQLite, `PRAGMA user_version=2`)
 Tables: fields(key,label,section,kind,unit,visible,sort,custom,has_sp), parts(line,part_no), entries(id,line,part_no,entry_ts,entered_by,sheet_rev,sheet_revised,hmi_file,notes,source), entry_values(entry_id,key,setpoint,actual), audit(id,ts,user,action,detail), line_forms(line,form_no).
@@ -76,7 +79,13 @@ Light: warm off-white ground #f4f1ea, panel #fffdf8, ink #1c1b19, accent burnt o
 - Name, section, type, kind and unit belong to the field and are shared by every form that uses it; the role belongs to the form.
 - `addField` attaches the new field to all forms by default (or the forms given); imported custom fields join every existing form; mapping a line to an unknown form number creates that form with the default field set.
 
-## 11. Notes
+## 11. Data integrity (schema v5, v0.2.0)
+- `entries.voided`, `void_reason`, `voided_ts`, `corrected_by` (the entry that replaced it); `fields.choices` (pick-list, one value per line, text settings only); index on `entry_values(key)`.
+- Service: `voidEntry(id, reason)`, `restoreEntry(id)`, `saveEntry({ corrects, correct_reason })`, `checkPart(line, part)`, `renamePart(line, from, to)`, `listPartsDetailed()`, `valueSuggestions()`; `listEntries({ includeVoided })`.
+- Data tab: **Show voided**, and **Revise** (new entry, original still counts), **Correct** (original voided on save) and **Void** per row. Forms tab: a pick-list column for text settings.
+- The v4 → v5 migration relabels the tonnage fields only if they still carry the old factory names ("Tonnage setting - station N", "Measured tonnage - piece N / station M") and fills the capacitance unit (µF) if it was empty. "Show setup fields" is remembered per PC, and coil rows beyond "Number of coils" are hidden on Data Entry.
+
+## 12. Notes
 - Mockup is a static comp at 1280×840: some cards clip in the PNGs; real app should scroll/resize. All mockup data is sample.
 - `seed_from_sheets.py` loads baseline setpoints from 6 sample sheets (transcribed from scans; verify).
 - `existing_app_v3/` is the authoritative current code (app.py ~660 lines, db.py ~380).

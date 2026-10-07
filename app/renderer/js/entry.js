@@ -4,13 +4,19 @@ ST.tabs.entry = {
   title: 'Data Entry',
   S: null, // form state
 
+  // "Show setup fields" is a per-PC preference, kept between entries and restarts.
+  SHOW_KEY: 'st.showInitial',
+  readShowInitial() { try { return localStorage.getItem(this.SHOW_KEY) === '1'; } catch { return false; } },
+  writeShowInitial(on) { try { localStorage.setItem(this.SHOW_KEY, on ? '1' : '0'); } catch { /* preference only */ } },
+
   fresh(keep = {}) {
     const last = this.S?.header || {};
     return {
       line: keep.line ?? '', part: keep.part ?? '', ts: ST.nowLocal(),
       header: { sheet_rev: keep.sheet_rev ?? last.sheet_rev ?? '', sheet_revised: keep.sheet_revised ?? last.sheet_revised ?? '', hmi_file: keep.hmi_file ?? last.hmi_file ?? '', entered_by: ST.state.settings.entered_by || '' },
       values: {}, notes: '', reason: '', photo: '', latest: {}, allFields: [], fields: [], form: null, source: 'manual',
-      first: false, showInitial: false, initialCount: 0,
+      first: false, showInitial: this.readShowInitial(), initialCount: 0,
+      partInfo: null, newPartOk: '', suggest: {}, corrects: null, correctReason: '',
     };
   },
 
@@ -27,27 +33,40 @@ ST.tabs.entry = {
     const S = this.S;
     S.form = S.line ? await ST.api('formFor', Number(S.line)) : null;
     S.allFields = S.form ? (await ST.api('fieldsForForm', S.form)).filter((f) => f.visible) : [];
+    S.suggest = await ST.api('valueSuggestions');
+    S.partInfo = S.line && S.part ? await ST.api('checkPart', Number(S.line), S.part) : null;
+    if (S.partInfo?.exists && S.partInfo.canonical !== S.part) S.part = S.partInfo.canonical; // "ab-100" -> the stored "AB-100"
     S.latest = S.line && S.part ? await ST.api('latestValues', Number(S.line), S.part) : {};
     S.parts = S.line ? await ST.api('listParts', Number(S.line)) : [];
     S.first = !!(S.line && S.part) && (await ST.api('listEntries', { line: Number(S.line), part: S.part, limit: 1 })).total === 0;
     this.applyRole();
   },
 
+  // How many coils this Line + Part runs: what is typed now, else the last known value.
+  coilCount() {
+    const typed = this.S.values.num_coils?.actual;
+    const n = parseInt(Compare.blank(typed) ? this.lastOf('num_coils').actual : typed, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  },
+
   // "Set once" fields are asked on the first entry for a Line + Part, when the user turns them on,
   // and whenever they already hold a typed value (e.g. while revising an old entry).
+  // Coil rows beyond "Number of coils" are hidden unless something is already typed in them.
   applyRole() {
     const S = this.S;
     const typed = (k) => { const v = S.values[k]; return !!v && !(Compare.blank(v.setpoint) && Compare.blank(v.actual)); };
+    const coils = this.coilCount();
+    const beyondCoils = (k) => { const m = /^coil(\d+)_amps$/.exec(k); return !!(coils && m && Number(m[1]) > coils); };
     S.initialCount = S.allFields.filter((f) => f.role === 'initial').length;
-    S.fields = S.allFields.filter((f) => f.role !== 'initial' || S.first || S.showInitial || typed(f.key));
+    S.fields = S.allFields.filter((f) => (f.role !== 'initial' || S.first || S.showInitial || typed(f.key)) && !(beyondCoils(f.key) && !typed(f.key)));
   },
 
   async setLinePart(line, part) {
     const S = this.S;
     const partChanged = part !== S.part || line !== S.line;
     S.line = line; S.part = part;
-    if (partChanged) {
-      S.values = {}; S.showInitial = false;
+    if (partChanged && !S.corrects) { // a correction keeps what was typed so the part number itself can be fixed
+      S.values = {};
       if (line && part) {
         const hdr = await ST.api('lastHeader', Number(line), part);
         if (hdr) Object.assign(S.header, hdr);
@@ -85,11 +104,14 @@ ST.tabs.entry = {
 
   input(key, which, placeholder) {
     const f = this.S.fields.find((x) => x.key === key);
+    const known = f && f.kind === 'text' && this.S.suggest[key]?.length ? `sug-${key}` : null; // pick-list + values already on record
     const inp = ST.h('input', {
       type: 'text', class: 'cell', 'data-key': key, 'data-which': which, placeholder: placeholder ?? '',
       inputmode: f && f.kind === 'number' ? 'decimal' : 'text', autocomplete: 'off', 'aria-label': `${f?.label || key} ${which}`,
-      value: this.val(key)[which] || '',
+      value: this.val(key)[which] || '', list: known,
       oninput: (e) => { this.val(key)[which] = e.target.value; this.mark(inp, key, which); this.refresh(); },
+      // the coil rows depend on this value; redraw once it is committed, not on every keystroke
+      onchange: key === 'num_coils' && which === 'actual' ? () => { this.applyRole(); this.draw(); } : null,
     });
     this.mark(inp, key, which);
     return inp;
@@ -129,6 +151,33 @@ ST.tabs.entry = {
       [1, 2, 3].map((s) => { const k = `ton_p${p}_s${s}`; return h('td', {}, by.has(k) ? this.input(k, 'actual', this.lastOf(k).actual ?? '') : null); })));
     return ST.card('Measured tonnage (T)', h('table', { class: 'grid-t tonnage' }, h('thead', {}, h('tr', {}, h('th'), [1, 2, 3].map((s) => h('th', { text: `Station ${s}` })))), h('tbody', {}, rows)),
       { class: 'tonnage-card' });
+  },
+
+  // Shown when the Part No. has no history on this line: confirm it is really new, or jump to a near match.
+  partBanner() {
+    const { h } = ST; const S = this.S; const info = S.partInfo;
+    if (!S.line || !S.part || !info || info.exists) return null;
+    const key = `${S.line}|${S.part}`;
+    const sure = S.newPartOk === key;
+    const near = info.similar.map((s) => h('button', { class: 'btn sm', type: 'button', text: `Use ${s.part_no} (${s.entries} entr${s.entries === 1 ? 'y' : 'ies'}, last ${ST.fmtDate(s.last_ts, true)})`, onclick: () => this.setLinePart(S.line, s.part_no) }));
+    const other = info.otherLines.length ? ` Also logged on ${info.otherLines.map((o) => `Line ${o.line}`).join(', ')}.` : '';
+    return h('div', { class: `card setup-note ${sure ? 'ok' : 'warn'}`, id: 'newpart-note' },
+      h('span', {}, h('b', { text: sure ? 'New part confirmed. ' : 'New part? ' }),
+        `No history for “${S.part}” on Line ${S.line}. ${sure ? 'Its first entry becomes the baseline.' : 'A mistyped part number starts a separate history with nothing to compare against.'}${other}`),
+      near.length ? h('div', { class: 'toolbar' }, h('span', { class: 'muted', text: 'Did you mean:' }), near) : null,
+      sure ? null : h('div', { class: 'toolbar' }, h('button', { class: 'btn primary sm', type: 'button', text: 'Yes, this is a new part', onclick: () => { S.newPartOk = key; this.draw(); } })));
+  },
+
+  // Shown while a correction is being typed: the original is voided when this is saved.
+  correctBanner() {
+    const { h } = ST; const S = this.S; const c = S.corrects;
+    if (!c) return null;
+    return h('div', { class: 'card setup-note warn' },
+      h('span', {}, h('b', { text: `Correcting entry #${c.id}` }), ` (Line ${c.line} · ${c.part_no} · ${ST.fmtDate(c.entry_ts)}). Saving voids the original: it stays on record but no longer counts as a change, and this entry replaces it.`),
+      h('div', { class: 'toolbar' },
+        h('label', { class: 'fld grow' }, h('span', { text: 'Reason for the correction (required)' }),
+          h('input', { type: 'text', id: 'f-correct-reason', value: S.correctReason, placeholder: 'e.g. Typo in billet temp', oninput: (e) => { S.correctReason = e.target.value; } })),
+        h('button', { class: 'btn ghost sm', type: 'button', text: 'Cancel correction', onclick: async () => { this.S = this.fresh({ line: S.line, part: S.part, ...S.header }); await this.loadContext(); this.draw(); } })));
   },
 
   draw() {
@@ -174,8 +223,9 @@ ST.tabs.entry = {
     const setupNote = S.line && S.part && S.initialCount
       ? h('div', { class: 'card setup-note' }, S.first
         ? h('span', {}, h('b', { text: 'First entry for this Line + Part. ' }), `Fill the ${S.initialCount} setup field${S.initialCount === 1 ? '' : 's'} too; later entries only ask for the tracked fields.`)
-        : h('label', { class: 'chk' }, h('input', { type: 'checkbox', checked: S.showInitial, onchange: (e) => { S.showInitial = e.target.checked; this.applyRole(); this.draw(); } }), `Show setup fields (${S.initialCount})`))
+        : h('label', { class: 'chk' }, h('input', { type: 'checkbox', checked: S.showInitial, onchange: (e) => { S.showInitial = e.target.checked; this.writeShowInitial(S.showInitial); this.applyRole(); this.draw(); } }), `Show setup fields (${S.initialCount})`))
       : null;
+    const lists = h('div', { hidden: true }, Object.entries(S.suggest || {}).map(([k, vals]) => h('datalist', { id: `sug-${k}` }, vals.map((v) => h('option', { value: v })))));
 
     const nChanges = this.countChanges();
     const bar = h('div', { class: 'actionbar' },
@@ -188,7 +238,7 @@ ST.tabs.entry = {
     const body = !S.line ? h('p', { class: 'muted pad', text: 'Add a line in Settings → Line → Form.' })
       : !S.part ? h('p', { class: 'muted pad', text: 'Pick or type a Part No. to load the form and last values.' })
         : h('div', { class: 'entry-body' }, h('div', { class: 'col' }, secs), side);
-    root.replaceChildren(...[hdr, setupNote, body, bar].filter(Boolean));
+    root.replaceChildren(...[hdr, this.correctBanner(), this.partBanner(), setupNote, body, bar, lists].filter(Boolean));
   },
 
   fillBlanks() {
@@ -206,23 +256,30 @@ ST.tabs.entry = {
     this.draw();
   },
 
-  // Load an existing entry as a new revision (entries are append-only).
-  prefill(e) {
+  // Load an existing entry as a new revision (entries are append-only). With `correcting`, saving also voids the original.
+  prefill(e, correcting = false) {
     this.S = this.fresh({ line: String(e.line), part: e.part_no, sheet_rev: e.sheet_rev, sheet_revised: e.sheet_revised, hmi_file: e.hmi_file });
     this.S.header.entered_by = e.entered_by || this.S.header.entered_by;
     for (const [k, v] of Object.entries(e.values)) this.S.values[k] = { setpoint: v.setpoint ?? '', actual: v.actual ?? '' };
     this.S.notes = e.notes || ''; this.S.reason = e.reason || ''; this.S.source = 'revision';
+    if (correcting) this.S.corrects = { id: e.id, line: e.line, part_no: e.part_no, entry_ts: e.entry_ts };
   },
 
   async save() {
     const S = this.S;
     try {
+      if (S.corrects && !S.correctReason.trim()) { ST.toast('Enter a reason for the correction first.', 'err'); document.getElementById('f-correct-reason')?.focus(); return; }
+      if (S.partInfo && !S.partInfo.exists && S.newPartOk !== `${S.line}|${S.part}`) {
+        ST.toast('New part? Confirm it (or pick the existing part) before saving.', 'err');
+        document.getElementById('newpart-note')?.scrollIntoView({ block: 'center' });
+        return;
+      }
       const values = {};
       for (const [k, v] of Object.entries(S.values)) values[k] = { setpoint: v.setpoint, actual: v.actual };
       const res = await ST.api('saveEntry', {
         line: S.line, part_no: S.part, entry_ts: S.ts, entered_by: S.header.entered_by, sheet_rev: S.header.sheet_rev,
         sheet_revised: S.header.sheet_revised, hmi_file: S.header.hmi_file, notes: S.notes, reason: S.reason, photo_src: S.photo || undefined,
-        values, source: S.source,
+        values, source: S.source, corrects: S.corrects ? S.corrects.id : undefined, correct_reason: S.corrects ? S.correctReason.trim() : undefined,
       });
       ST.toast(`Saved entry #${res.id} · ${res.changes} change${res.changes === 1 ? '' : 's'}`);
       if (S.header.entered_by !== ST.state.settings.entered_by) { await ST.api('setSettings', { entered_by: S.header.entered_by }); ST.state.settings.entered_by = S.header.entered_by; }
