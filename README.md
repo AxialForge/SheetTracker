@@ -18,7 +18,8 @@ Data lives in `%USERPROFILE%\.setup_tracker\` (`setups.db`, `config.json`, `back
 | **Data Entry** | Blank fill-in form per line's sheet form. Gray placeholders and a *Last* column show previous values; changed cells go yellow, actual ≠ setpoint orange. *Fill blanks with last values*, *Clear*, `Ctrl+S` |
 | **Data** | Filterable table sorted by line. Editable notes, reasons, photos, *Revise* (loads an entry as a new revision) |
 | **Export** | CSV / XLSX (one part or all, date range, reasons) and the weekly change report (PDF, optional auto-create on app start) |
-| **Settings** | Fields (hide / rename / add), line → form map, optional features, backup & restore, audit log, theme, date format, sample data, import of the v3 Python database |
+| **Forms** | Add, renumber, copy and delete forms; choose which fields each form carries and whether each is *Tracked* (asked every entry) or *Set once* (asked on the first entry for a Line + Part); add, edit or remove fields |
+| **Settings** | Fields (hide / rename / add for all forms), line → form map, optional features, backup & restore, audit log, theme, date format, sample data, import of the v3 Python database |
 | **About** | Version, local-data statement, roadmap |
 
 Change rules (`docs/SPEC.md` §4): each setting's actual is compared to the last known non-blank value for that Line + Part; blanks are ignored; `2300` equals `2300.0`; readings (heat #, PTP, tonnage, …) never count as changes; entries are append-only.
@@ -39,7 +40,7 @@ Set `SETUP_TRACKER_DATA_DIR` to run against a scratch data folder. Release: bump
 
 ## Known gaps
 
-- The factory setting names, units and sections are a starting set. Rename, hide or add fields in Settings → Fields to match the real sheets; the line → form mapping is in Settings too.
+- The factory setting names, units and sections are a starting set. Change what each form carries in the Forms tab (and rename, hide or add fields there or in Settings → Fields); the line → form mapping is in Settings.
 - Dark themes only (crimson default, amber, steel).
 - No code signing and no auto-update.
 - Deferred by design: OCR / photo extraction, network-folder database, multi-user.

@@ -1,6 +1,6 @@
 'use strict';
 (function () {
-  const ORDER = ['dashboard', 'entry', 'data', 'export', 'settings', 'about'];
+  const ORDER = ['dashboard', 'entry', 'data', 'export', 'forms', 'settings', 'about'];
   let current = null;
 
   ST.show = async function show(name) {
@@ -20,7 +20,7 @@
     ORDER.forEach((k, i) => nav.append(ST.h('button', { role: 'tab', 'data-tab': k, title: `Ctrl+${i + 1}`, text: ST.tabs[k].title, onclick: () => ST.show(k) })));
     window.addEventListener('keydown', (e) => {
       if (e.ctrlKey && e.key === 's') { e.preventDefault(); if (current === 'entry') ST.tabs.entry.save(); }
-      else if (e.ctrlKey && /^[1-6]$/.test(e.key)) { e.preventDefault(); ST.show(ORDER[Number(e.key) - 1]); }
+      else if (e.ctrlKey && /^[1-7]$/.test(e.key)) { e.preventDefault(); ST.show(ORDER[Number(e.key) - 1]); }
     });
     window.api.onAutoReport((file) => ST.toast(`Weekly report created: ${file}`));
     window.addEventListener('error', (e) => ST.fail(e.error || e.message));

@@ -52,10 +52,12 @@ ST.applyTheme = (name) => { document.documentElement.dataset.theme = name || 'cr
 ST.cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
 ST.refreshCore = async function refreshCore() {
-  const [settings, fields, lineForms] = await Promise.all([ST.api('getSettings'), ST.api('getFields'), ST.api('getLineForms')]);
+  const [settings, fields, lineForms, forms, sections] = await Promise.all([ST.api('getSettings'), ST.api('getFields'), ST.api('getLineForms'), ST.api('getForms'), ST.api('getSections')]);
   ST.state.settings = settings;
   ST.state.fields = fields;
   ST.state.lineForms = lineForms;
+  ST.state.forms = forms;
+  ST.state.sections = sections;
   ST.applyTheme(settings.theme);
 };
 

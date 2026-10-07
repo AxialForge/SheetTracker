@@ -8,7 +8,8 @@ const { DatabaseSync } = require('node:sqlite');
 const C = require('../shared/compare');
 const F = require('./fields');
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
+const ROLES = ['tracked', 'initial']; // tracked = changes day to day; initial = set once when a Line+Part is first entered
 const BACKUP_THROTTLE_MS = 5 * 60 * 1000;
 const BACKUP_KEEP = 100;
 const MISSING = 'MISSING';
@@ -53,6 +54,15 @@ function migrate(db) {
         acked_ts TEXT NOT NULL, PRIMARY KEY(line, part_no, key));
       PRAGMA user_version = 3;`);
   }
+  if (v < 4) {
+    // Forms and which fields each one carries (previously hard-coded). Rows are seeded by SetupService._seedForms().
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS forms(form_no INTEGER PRIMARY KEY, name TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '');
+      CREATE TABLE IF NOT EXISTS form_fields(form_no INTEGER NOT NULL, key TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'tracked' CHECK (role IN ('tracked','initial')), PRIMARY KEY(form_no, key));
+      CREATE INDEX IF NOT EXISTS ix_form_fields_key ON form_fields(key);
+      PRAGMA user_version = 4;`);
+  }
 }
 
 class SetupService {
@@ -90,6 +100,7 @@ class SetupService {
     if (hasData && before < SCHEMA_VERSION) this.backupNow('pre-migrate', true);
     migrate(this.db);
     this._seed();
+    this._seedForms();
     this._cache = null;
   }
   close() { try { this.db.close(); } catch { /* already closed */ } }
@@ -107,6 +118,28 @@ class SetupService {
     }
     const ins = db.prepare('INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)');
     Object.entries(F.DEFAULT_SETTINGS).forEach(([k, v]) => ins.run(k, v));
+  }
+
+  // First run on schema v4: create the forms that exist today with exactly the fields they always had.
+  _seedForms() {
+    if (this.db.prepare('SELECT COUNT(*) c FROM forms').get().c > 0) return;
+    const nums = new Set(F.FORMS);
+    this.db.prepare('SELECT DISTINCT form_no FROM line_forms').all().forEach((r) => nums.add(r.form_no));
+    this._tx(() => [...nums].sort((a, b) => a - b).forEach((n) => this._createForm(n)));
+  }
+  // A form created without an explicit field list carries every field that is not specific to another form.
+  _createForm(formNo, name = '') {
+    this.db.prepare('INSERT OR IGNORE INTO forms(form_no,name,notes) VALUES(?,?,\'\')').run(formNo, name);
+    const specific = this._specific();
+    const keys = F.formKeys(formNo);
+    const ins = this.db.prepare('INSERT OR IGNORE INTO form_fields(form_no,key,role) VALUES(?,?,\'tracked\')');
+    for (const f of this.getFields()) if (f.custom || !specific.has(f.key) || keys.has(f.key)) ins.run(formNo, f.key);
+  }
+  ensureForm(formNo) {
+    formNo = parseInt(formNo, 10);
+    if (!formNo) throw new Error('Form number must be a number');
+    if (!this.db.prepare('SELECT 1 FROM forms WHERE form_no=?').get(formNo)) this._tx(() => this._createForm(formNo));
+    return formNo;
   }
 
   _tx(fn) {
@@ -154,35 +187,48 @@ class SetupService {
     Object.values(F.FORM_SPECIFIC).forEach((arr) => arr.forEach((f) => s.add(f[0])));
     return s;
   }
+  getSections() { return F.SECTIONS; }
   fieldsForForm(form) {
-    const specific = this._specific();
-    const keys = F.formKeys(Number(form));
-    return this.getFields().filter((f) => f.custom || !specific.has(f.key) || keys.has(f.key));
+    return this.getFormFields(this.ensureForm(form));
   }
   updateField(key, patch) {
     const cur = this.db.prepare('SELECT * FROM fields WHERE key=?').get(key);
     if (!cur) throw new Error(`Unknown field: ${key}`);
+    if (patch.section !== undefined && !F.SECTIONS.some((s) => s.key === patch.section)) throw new Error(`Unknown section: ${patch.section}`);
+    if (patch.kind !== undefined && !['number', 'text'].includes(patch.kind)) throw new Error('Type must be number or text');
     const next = {
       label: (patch.label ?? cur.label).trim() || cur.label,
       visible: patch.visible === undefined ? cur.visible : (patch.visible ? 1 : 0),
       unit: patch.unit ?? cur.unit,
       section: patch.section ?? cur.section,
+      kind: patch.kind ?? cur.kind,
+      has_sp: patch.has_sp === undefined ? cur.has_sp : (patch.has_sp ? 1 : 0),
     };
-    this.db.prepare('UPDATE fields SET label=?, visible=?, unit=?, section=? WHERE key=?').run(next.label, next.visible, next.unit, next.section, key);
+    this.db.prepare('UPDATE fields SET label=?, visible=?, unit=?, section=?, kind=?, has_sp=? WHERE key=?')
+      .run(next.label, next.visible, next.unit, next.section, next.kind, next.has_sp, key);
     this.audit('field-update', `${key}: ${JSON.stringify(patch)}`);
     this._cache = null;
     return this.getFields();
   }
-  addField({ label, section = 'custom', kind = 'number', unit = '', has_sp = 1 }) {
+  // forms: 'all' (default) or a list of form numbers the new field is added to; role: tracked | initial
+  addField({ label, section = 'custom', kind = 'number', unit = '', has_sp = 1, forms = 'all', role = 'tracked' }) {
     label = String(label || '').trim();
     if (!label) throw new Error('Field name is required');
+    if (!F.SECTIONS.some((s) => s.key === section)) throw new Error(`Unknown section: ${section}`);
+    if (!ROLES.includes(role)) throw new Error('Role must be tracked or initial');
     let base = 'x_' + label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
     let key = base; let i = 2;
     while (this.db.prepare('SELECT 1 FROM fields WHERE key=?').get(key)) key = `${base}_${i++}`;
     const sort = (this.db.prepare('SELECT MAX(sort) m FROM fields').get().m || 0) + 10;
-    this.db.prepare('INSERT INTO fields(key,label,section,kind,unit,visible,sort,custom,has_sp) VALUES(?,?,?,?,?,1,?,1,?)')
-      .run(key, label, section, kind === 'text' ? 'text' : 'number', unit, sort, has_sp ? 1 : 0);
-    this.audit('field-add', `${key} (${label})`);
+    const targets = forms === 'all' ? this.db.prepare('SELECT form_no FROM forms').all().map((r) => r.form_no) : [].concat(forms).map(Number);
+    for (const n of targets) if (!this.db.prepare('SELECT 1 FROM forms WHERE form_no=?').get(n)) throw new Error(`Form ${n} does not exist`);
+    this._tx(() => {
+      this.db.prepare('INSERT INTO fields(key,label,section,kind,unit,visible,sort,custom,has_sp) VALUES(?,?,?,?,?,1,?,1,?)')
+        .run(key, label, section, kind === 'text' ? 'text' : 'number', unit, sort, has_sp ? 1 : 0);
+      const ins = this.db.prepare('INSERT OR IGNORE INTO form_fields(form_no,key,role) VALUES(?,?,?)');
+      targets.forEach((n) => ins.run(n, key, role));
+    });
+    this.audit('field-add', `${key} (${label}) -> ${targets.length ? targets.join(', ') : 'no forms'}`);
     this._cache = null;
     return this.getFields();
   }
@@ -191,10 +237,98 @@ class SetupService {
     if (!f || !f.custom) throw new Error('Only custom fields can be deleted; hide factory fields instead.');
     this._tx(() => {
       this.db.prepare('DELETE FROM entry_values WHERE key=?').run(key);
+      this.db.prepare('DELETE FROM form_fields WHERE key=?').run(key);
       this.db.prepare('DELETE FROM fields WHERE key=?').run(key);
     });
     this.audit('field-delete', key);
     return this.getFields();
+  }
+
+  // ---------- forms ----------
+  getForms() {
+    const lines = this.db.prepare('SELECT line, form_no FROM line_forms ORDER BY line').all();
+    const counts = this.db.prepare('SELECT form_no, role, COUNT(*) n FROM form_fields GROUP BY form_no, role').all();
+    return this.db.prepare('SELECT * FROM forms ORDER BY form_no').all().map((f) => ({
+      ...f,
+      lines: lines.filter((l) => l.form_no === f.form_no).map((l) => l.line),
+      tracked: counts.find((c) => c.form_no === f.form_no && c.role === 'tracked')?.n || 0,
+      initial: counts.find((c) => c.form_no === f.form_no && c.role === 'initial')?.n || 0,
+    }));
+  }
+  _form(formNo) {
+    const f = this.db.prepare('SELECT * FROM forms WHERE form_no=?').get(Number(formNo));
+    if (!f) throw new Error(`Form ${formNo} does not exist`);
+    return f;
+  }
+  // copyFrom: a form number whose field list (and roles) the new form starts with; otherwise it starts empty.
+  addForm({ form_no, name = '', notes = '', copyFrom } = {}) {
+    const n = parseInt(form_no, 10);
+    if (!n || n < 1) throw new Error('Form number must be a positive number');
+    if (this.db.prepare('SELECT 1 FROM forms WHERE form_no=?').get(n)) throw new Error(`Form ${n} already exists`);
+    if (copyFrom !== undefined && copyFrom !== null && copyFrom !== '') this._form(copyFrom);
+    this._tx(() => {
+      this.db.prepare('INSERT INTO forms(form_no,name,notes) VALUES(?,?,?)').run(n, String(name).trim(), String(notes).trim());
+      if (copyFrom !== undefined && copyFrom !== null && copyFrom !== '') {
+        this.db.prepare('INSERT INTO form_fields(form_no,key,role) SELECT ?, key, role FROM form_fields WHERE form_no=?').run(n, Number(copyFrom));
+      }
+    });
+    this.audit('form-add', `${n}${copyFrom ? ` (copied from ${copyFrom})` : ''}`);
+    return this.getForms();
+  }
+  updateForm(formNo, patch = {}) {
+    const cur = this._form(formNo);
+    this.db.prepare('UPDATE forms SET name=?, notes=? WHERE form_no=?')
+      .run(String(patch.name ?? cur.name).trim(), String(patch.notes ?? cur.notes).trim(), cur.form_no);
+    this.audit('form-update', `${cur.form_no}: ${JSON.stringify(patch)}`);
+    return this.getForms();
+  }
+  // Change a form's number everywhere it is used (field list and line mapping). Stored entries are unaffected.
+  renameForm(oldNo, newNo) {
+    const cur = this._form(oldNo);
+    const n = parseInt(newNo, 10);
+    if (!n || n < 1) throw new Error('Form number must be a positive number');
+    if (n === cur.form_no) return this.getForms();
+    if (this.db.prepare('SELECT 1 FROM forms WHERE form_no=?').get(n)) throw new Error(`Form ${n} already exists`);
+    this._tx(() => {
+      this.db.prepare('UPDATE forms SET form_no=? WHERE form_no=?').run(n, cur.form_no);
+      this.db.prepare('UPDATE form_fields SET form_no=? WHERE form_no=?').run(n, cur.form_no);
+      this.db.prepare('UPDATE line_forms SET form_no=? WHERE form_no=?').run(n, cur.form_no);
+    });
+    this.audit('form-renumber', `${cur.form_no} -> ${n}`);
+    return this.getForms();
+  }
+  deleteForm(formNo) {
+    const cur = this._form(formNo);
+    const used = this.db.prepare('SELECT line FROM line_forms WHERE form_no=? ORDER BY line').all(cur.form_no).map((r) => r.line);
+    if (used.length) throw new Error(`Form ${cur.form_no} is used by line${used.length > 1 ? 's' : ''} ${used.join(', ')}. Point ${used.length > 1 ? 'them' : 'it'} at another form first (Settings → Line → Form).`);
+    this._tx(() => {
+      this.db.prepare('DELETE FROM form_fields WHERE form_no=?').run(cur.form_no);
+      this.db.prepare('DELETE FROM forms WHERE form_no=?').run(cur.form_no);
+    });
+    this.audit('form-delete', String(cur.form_no));
+    return this.getForms();
+  }
+  // Fields on a form, each with its role. Removing a field from a form never deletes stored values.
+  getFormFields(formNo) {
+    return this.db.prepare(`SELECT f.*, ff.role FROM form_fields ff JOIN fields f ON f.key = ff.key
+      WHERE ff.form_no=? ORDER BY f.sort, f.key`).all(Number(formNo));
+  }
+  setFormField(formNo, key, role = 'tracked') {
+    const form = this._form(formNo);
+    if (!this.db.prepare('SELECT 1 FROM fields WHERE key=?').get(key)) throw new Error(`Unknown field: ${key}`);
+    if (!ROLES.includes(role)) throw new Error('Role must be tracked or initial');
+    this.db.prepare(`INSERT INTO form_fields(form_no,key,role) VALUES(?,?,?)
+      ON CONFLICT(form_no,key) DO UPDATE SET role=excluded.role`).run(form.form_no, key, role);
+    this.audit('form-field', `${form.form_no}: ${key} = ${role}`);
+    this._cache = null;
+    return this.getFormFields(form.form_no);
+  }
+  removeFormField(formNo, key) {
+    const form = this._form(formNo);
+    this.db.prepare('DELETE FROM form_fields WHERE form_no=? AND key=?').run(form.form_no, key);
+    this.audit('form-field-remove', `${form.form_no}: ${key}`);
+    this._cache = null;
+    return this.getFormFields(form.form_no);
   }
   getLineForms() {
     return this.db.prepare('SELECT line, form_no FROM line_forms ORDER BY line').all()
@@ -203,6 +337,7 @@ class SetupService {
   setLineForm(line, form) {
     line = parseInt(line, 10); form = parseInt(form, 10);
     if (!line || !form) throw new Error('Line and form must be numbers');
+    this.ensureForm(form);
     this.db.prepare('INSERT INTO line_forms(line,form_no) VALUES(?,?) ON CONFLICT(line) DO UPDATE SET form_no=excluded.form_no').run(line, form);
     this.audit('line-form', `L${line} -> ${form}`);
     return this.getLineForms();
@@ -596,8 +731,13 @@ class SetupService {
           this.db.prepare('INSERT INTO fields(key,label,section,kind,unit,visible,sort,custom,has_sp) VALUES(?,?,?,?,?,?,?,?,?)')
             .run(f.key, f.label, f.section || 'custom', f.kind || 'number', f.unit || '', f.visible ?? 1, f.sort ?? 999, f.custom ?? 1, f.has_sp ?? 1);
           newFields++;
+          // imported fields join every form that already exists (as tracked)
+          for (const fm of this.db.prepare('SELECT form_no FROM forms').all()) {
+            this.db.prepare('INSERT OR IGNORE INTO form_fields(form_no,key,role) VALUES(?,?,\'tracked\')').run(fm.form_no, f.key);
+          }
         }
         for (const l of src.prepare('SELECT * FROM line_forms').all()) {
+          this.ensureForm(l.form_no);
           this.db.prepare('INSERT OR IGNORE INTO line_forms(line,form_no) VALUES(?,?)').run(l.line, l.form_no);
         }
         const dup = this.db.prepare('SELECT 1 FROM entries WHERE line=? AND part_no=? AND entry_ts=?');

@@ -9,6 +9,7 @@ const { reportHtml } = require('./report');
 
 const API = new Set([
   'getSettings', 'setSettings', 'getPaths', 'getFields', 'fieldsForForm', 'updateField', 'addField', 'deleteField',
+  'getSections', 'getForms', 'addForm', 'updateForm', 'renameForm', 'deleteForm', 'getFormFields', 'setFormField', 'removeFormField',
   'getLineForms', 'setLineForm', 'removeLine', 'formFor', 'listParts', 'allParts', 'saveEntry', 'updateNotes',
   'latestValues', 'lastHeader', 'listEntries', 'getEntry', 'dashboard', 'trend', 'compareTrend', 'driftAlerts',
   'ackDrift', 'listBackups', 'integrityCheck', 'backupNow', 'getAudit', 'loadSampleData', 'removeSampleData',

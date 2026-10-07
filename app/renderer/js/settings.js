@@ -19,7 +19,7 @@ ST.tabs.settings = {
     const fieldRows = ST.state.fields.map((f) => h('tr', { class: f.visible ? '' : 'dim' },
       h('td', {}, h('input', { type: 'checkbox', checked: !!f.visible, title: 'Show on forms and in Data', 'aria-label': `Show ${f.label}`, onchange: guard(async (e) => { await ST.api('updateField', f.key, { visible: e.target.checked }); await ST.refreshCore(); again(); }) })),
       h('td', {}, h('input', { type: 'text', class: 'cell', value: f.label, 'aria-label': `Rename ${f.key}`, onchange: guard(async (e) => { await ST.api('updateField', f.key, { label: e.target.value }); await ST.refreshCore(); ST.toast('Renamed'); }) })),
-      h('td', { class: 'muted', text: ({ press: 'Press setup', heat: 'Heating', lube: 'Lube & spray', coils: 'Coil amps', robot: 'Robot', run: 'Run', readings: 'Readings', tonnage: 'Tonnage', custom: 'Custom' })[f.section] || f.section }),
+      h('td', { class: 'muted', text: ST.state.sections.find((s) => s.key === f.section)?.label || f.section }),
       h('td', { class: 'muted', text: f.has_sp ? 'Setting' : 'Reading' }),
       h('td', { class: 'muted', text: f.unit }),
       h('td', {}, f.custom ? h('button', { class: 'btn ghost sm', text: 'Delete', onclick: guard(async () => { if (!confirm(`Delete custom field "${f.label}" and all of its stored values?`)) return; await ST.api('deleteField', f.key); await ST.refreshCore(); again(); }) }) : null)));
@@ -30,20 +30,20 @@ ST.tabs.settings = {
       ST.select([['number', 'Number'], ['text', 'Text']], 'number', { onchange: (e) => { nf.kind = e.target.value; } }),
       ST.select([['1', 'Setting (setpoint + actual, change-tracked)'], ['0', 'Reading (actual only)']], '1', { onchange: (e) => { nf.has_sp = e.target.value; } }),
       h('button', { class: 'btn', text: 'Add field', onclick: guard(async () => { await ST.api('addField', { label: nf.label, unit: nf.unit, kind: nf.kind, has_sp: nf.has_sp === '1', section: 'custom' }); await ST.refreshCore(); again(); }) }));
-    const fieldsCard = ST.card('Fields', h('div', {}, h('p', { class: 'muted', text: 'Hide, rename or add fields. Hidden fields keep their stored data. Settings are change-tracked; readings are not.' }),
+    const fieldsCard = ST.card('Fields', h('div', {}, h('p', { class: 'muted', text: 'Hide, rename or add fields for all forms at once. Hidden fields keep their stored data. Settings are change-tracked; readings are not. To change what a single form carries, use the Forms tab.' }),
       h('div', { class: 'tbl-wrap short' }, h('table', { class: 'data-t' }, h('thead', {}, h('tr', {}, ['Show', 'Name', 'Section', 'Type', 'Unit', ''].map((t) => h('th', { text: t })))), h('tbody', {}, fieldRows))), addForm), { class: 'span2' });
 
     // ---- lines
-    const forms = [10880, 10899, 10900, 10903];
+    const forms = ST.state.forms.map((f) => f.form_no);
     const lineRows = ST.state.lineForms.map((l) => h('tr', {}, h('td', { class: 'mono', text: `Line ${l.line}` }), h('td', { class: 'muted', text: l.tonnage }),
       h('td', {}, ST.select(forms.includes(l.form_no) ? forms : [...forms, l.form_no], l.form_no, { onchange: guard(async (e) => { await ST.api('setLineForm', l.line, e.target.value); await ST.refreshCore(); ST.toast('Saved'); }) })),
       h('td', {}, h('button', { class: 'btn ghost sm', text: 'Remove', onclick: guard(async () => { await ST.api('removeLine', l.line); await ST.refreshCore(); again(); }) }))));
-    const nl = { line: '', form: '10899' };
+    const nl = { line: '', form: String(forms[0] ?? '') };
     const lineCard = ST.card('Line → Form', h('div', {}, h('table', { class: 'data-t slim' }, h('tbody', {}, lineRows)),
       h('div', { class: 'toolbar' }, h('input', { type: 'number', min: 1, class: 'short', placeholder: 'Line #', oninput: (e) => { nl.line = e.target.value; } }),
-        ST.select(forms.map(String), '10899', { onchange: (e) => { nl.form = e.target.value; } }),
+        ST.select(forms.map(String), nl.form, { onchange: (e) => { nl.form = e.target.value; } }),
         h('button', { class: 'btn', text: 'Add line', onclick: guard(async () => { await ST.api('setLineForm', nl.line, nl.form); await ST.refreshCore(); again(); }) })),
-      h('p', { class: 'muted', text: 'Form 10880: coil 1–2 · 10899: coil 1–3 + robot · 10900: capacitance + run settings · 10903: coil 1–5 + robot + gripper.' })));
+      h('p', { class: 'muted', text: 'Create forms and choose which fields each one carries in the Forms tab.' })));
 
     // ---- optional features
     const feat = (key, label, hint) => h('label', { class: 'feat' }, h('input', { type: 'checkbox', checked: s[`opt_${key}`] === '1', onchange: guard(async (e) => { await saveSetting(`opt_${key}`)(e); await again(); }) }), h('span', {}, h('b', { text: label }), h('small', { class: 'muted', text: hint })));

@@ -13,7 +13,7 @@ process.env.SETUP_TRACKER_DATA_DIR = dataDir;
 app.commandLine.appendSwitch('no-sandbox');
 app.disableHardwareAcceleration();
 
-const TABS = ['dashboard', 'entry', 'data', 'export', 'settings', 'about'];
+const TABS = ['dashboard', 'entry', 'data', 'export', 'forms', 'settings', 'about'];
 const THEMES = ['crimson', 'amber', 'steel'];
 
 app.whenReady().then(async () => {

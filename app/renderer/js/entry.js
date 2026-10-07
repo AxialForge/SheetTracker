@@ -9,7 +9,8 @@ ST.tabs.entry = {
     return {
       line: keep.line ?? '', part: keep.part ?? '', ts: ST.nowLocal(),
       header: { sheet_rev: keep.sheet_rev ?? last.sheet_rev ?? '', sheet_revised: keep.sheet_revised ?? last.sheet_revised ?? '', hmi_file: keep.hmi_file ?? last.hmi_file ?? '', entered_by: ST.state.settings.entered_by || '' },
-      values: {}, notes: '', reason: '', photo: '', latest: {}, fields: [], form: null, source: 'manual',
+      values: {}, notes: '', reason: '', photo: '', latest: {}, allFields: [], fields: [], form: null, source: 'manual',
+      first: false, showInitial: false, initialCount: 0,
     };
   },
 
@@ -25,9 +26,20 @@ ST.tabs.entry = {
   async loadContext() {
     const S = this.S;
     S.form = S.line ? await ST.api('formFor', Number(S.line)) : null;
-    S.fields = S.form ? (await ST.api('fieldsForForm', S.form)).filter((f) => f.visible) : [];
+    S.allFields = S.form ? (await ST.api('fieldsForForm', S.form)).filter((f) => f.visible) : [];
     S.latest = S.line && S.part ? await ST.api('latestValues', Number(S.line), S.part) : {};
     S.parts = S.line ? await ST.api('listParts', Number(S.line)) : [];
+    S.first = !!(S.line && S.part) && (await ST.api('listEntries', { line: Number(S.line), part: S.part, limit: 1 })).total === 0;
+    this.applyRole();
+  },
+
+  // "Set once" fields are asked on the first entry for a Line + Part, when the user turns them on,
+  // and whenever they already hold a typed value (e.g. while revising an old entry).
+  applyRole() {
+    const S = this.S;
+    const typed = (k) => { const v = S.values[k]; return !!v && !(Compare.blank(v.setpoint) && Compare.blank(v.actual)); };
+    S.initialCount = S.allFields.filter((f) => f.role === 'initial').length;
+    S.fields = S.allFields.filter((f) => f.role !== 'initial' || S.first || S.showInitial || typed(f.key));
   },
 
   async setLinePart(line, part) {
@@ -35,7 +47,7 @@ ST.tabs.entry = {
     const partChanged = part !== S.part || line !== S.line;
     S.line = line; S.part = part;
     if (partChanged) {
-      S.values = {};
+      S.values = {}; S.showInitial = false;
       if (line && part) {
         const hdr = await ST.api('lastHeader', Number(line), part);
         if (hdr) Object.assign(S.header, hdr);
@@ -88,7 +100,7 @@ ST.tabs.entry = {
     const rows = fields.map((f) => {
       const last = this.lastOf(f.key);
       return h('tr', {},
-        h('td', { class: 'lbl', text: f.label }, f.unit ? h('small', { class: 'muted', text: ` ${f.unit}` }) : null),
+        h('td', { class: 'lbl', text: f.label }, f.unit ? h('small', { class: 'muted', text: ` ${f.unit}` }) : null, f.role === 'initial' ? h('small', { class: 'tag', text: 'setup' }) : null),
         h('td', {}, this.input(f.key, 'setpoint', last.setpoint ?? '')),
         h('td', {}, this.input(f.key, 'actual', last.actual ?? '')),
         h('td', { class: 'last mono', title: last.ts ? `as of ${ST.fmtDate(last.ts)}` : '' }, last.actual ?? '—'));
@@ -104,7 +116,7 @@ ST.tabs.entry = {
     const { h } = ST;
     const rows = fields.map((f) => {
       const last = this.lastOf(f.key);
-      return h('tr', {}, h('td', { class: 'lbl', text: f.label }, f.unit ? h('small', { class: 'muted', text: ` ${f.unit}` }) : null),
+      return h('tr', {}, h('td', { class: 'lbl', text: f.label }, f.unit ? h('small', { class: 'muted', text: ` ${f.unit}` }) : null, f.role === 'initial' ? h('small', { class: 'tag', text: 'setup' }) : null),
         h('td', {}, this.input(f.key, 'actual', last.actual ?? '')), h('td', { class: 'last mono', text: last.actual ?? '—' }));
     });
     return ST.card('Readings', h('table', { class: 'grid-t' }, h('thead', {}, h('tr', {}, h('th', { text: 'Reading' }), h('th', { text: 'Actual' }), h('th', { text: 'Last' }))), h('tbody', {}, rows)), { class: 'readings' });
@@ -138,7 +150,7 @@ ST.tabs.entry = {
       hd('Entered by', h('input', { type: 'text', value: S.header.entered_by, oninput: (e) => { S.header.entered_by = e.target.value; } })));
 
     const secs = [];
-    const sections = [{ key: 'press', label: 'Press setup' }, { key: 'heat', label: 'Heating' }, { key: 'lube', label: 'Lube & spray' }, { key: 'coils', label: 'Coil amps' }, { key: 'robot', label: 'Robot / handling' }, { key: 'run', label: 'Run settings' }, { key: 'custom', label: 'Custom settings' }];
+    const sections = ST.state.sections.filter((s) => !['readings', 'tonnage'].includes(s.key)).map((s) => (s.key === 'custom' ? { key: 'custom', label: 'Custom settings' } : s));
     const known = new Set(sections.map((s) => s.key).concat(['readings', 'tonnage']));
     for (const sec of sections) {
       const fl = S.fields.filter((f) => f.has_sp && (f.section === sec.key || (sec.key === 'custom' && !known.has(f.section))));
@@ -159,6 +171,12 @@ ST.tabs.entry = {
     const notes = ST.card('Notes', h('div', {}, chips, h('textarea', { id: 'f-notes', rows: 3, placeholder: 'Notes for this entry…', oninput: (e) => { S.notes = e.target.value; } , value: S.notes }), photo));
     side.append(notes);
 
+    const setupNote = S.line && S.part && S.initialCount
+      ? h('div', { class: 'card setup-note' }, S.first
+        ? h('span', {}, h('b', { text: 'First entry for this Line + Part. ' }), `Fill the ${S.initialCount} setup field${S.initialCount === 1 ? '' : 's'} too; later entries only ask for the tracked fields.`)
+        : h('label', { class: 'chk' }, h('input', { type: 'checkbox', checked: S.showInitial, onchange: (e) => { S.showInitial = e.target.checked; this.applyRole(); this.draw(); } }), `Show setup fields (${S.initialCount})`))
+      : null;
+
     const nChanges = this.countChanges();
     const bar = h('div', { class: 'actionbar' },
       h('button', { class: 'btn ghost', text: 'Fill blanks with last values', onclick: () => this.fillBlanks() }),
@@ -170,7 +188,7 @@ ST.tabs.entry = {
     const body = !S.line ? h('p', { class: 'muted pad', text: 'Add a line in Settings → Line → Form.' })
       : !S.part ? h('p', { class: 'muted pad', text: 'Pick or type a Part No. to load the form and last values.' })
         : h('div', { class: 'entry-body' }, h('div', { class: 'col' }, secs), side);
-    root.replaceChildren(hdr, body, bar);
+    root.replaceChildren(...[hdr, setupNote, body, bar].filter(Boolean));
   },
 
   fillBlanks() {

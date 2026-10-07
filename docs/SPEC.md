@@ -68,7 +68,14 @@ Light: warm off-white ground #f4f1ea, panel #fffdf8, ink #1c1b19, accent burnt o
 7. Tests: change detection, migration, backup/restore round trip, drift logic; headless smoke run of every tab in both themes.
 8. Package for Windows (PyInstaller one-folder) and update README.
 
-## 10. Notes
+## 10. Forms editor (schema v4)
+- Forms and their fields are data, not code: `forms(form_no, name, notes)` and `form_fields(form_no, key, role)`. A fresh install or a v3 → v4 migration seeds exactly the field lists that were previously hard-coded (`FORM_SPECIFIC` in `fields.js`), all `tracked`.
+- **Role**: `tracked` fields change day to day and are asked on every entry. `initial` ("set once") fields are fixed setup values, asked on the first entry for a Line + Part and on demand afterwards (Data Entry → *Show setup fields*). Both roles use the same storage and the same change detection.
+- **Forms tab**: add a form (empty or copied from another, roles included), rename its number everywhere (field list and line mapping; stored entries are unaffected), delete it (refused while a line uses it), edit name / notes. Per form: add an existing field, create a new field (this form only or all forms), remove a field (stored values are kept), change a field's name / section / type / setting-or-reading / unit, set its role.
+- Name, section, type, kind and unit belong to the field and are shared by every form that uses it; the role belongs to the form.
+- `addField` attaches the new field to all forms by default (or the forms given); imported custom fields join every existing form; mapping a line to an unknown form number creates that form with the default field set.
+
+## 11. Notes
 - Mockup is a static comp at 1280×840: some cards clip in the PNGs; real app should scroll/resize. All mockup data is sample.
 - `seed_from_sheets.py` loads baseline setpoints from 6 sample sheets (transcribed from scans; verify).
 - `existing_app_v3/` is the authoritative current code (app.py ~660 lines, db.py ~380).

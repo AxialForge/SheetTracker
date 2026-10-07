@@ -5,7 +5,7 @@ ST.tabs.about = {
     const { h } = ST;
     const info = await ST.main('app:info');
     const road = [
-      ['Done', 'Dashboard, data entry, history, export, backup / restore, drift alerts, change reasons, sheet photos, weekly PDF report, missing-entry tracking, compare lines'],
+      ['Done', 'Dashboard, data entry, history, export, backup / restore, drift alerts, change reasons, sheet photos, weekly PDF report, missing-entry tracking, compare lines, editable forms and fields (tracked vs set-once)'],
       ['Not yet', 'Sheet revision tracking'],
       ['Deferred', 'OCR / photo extraction of sheets'],
       ['Deferred', 'Network-folder database and multi-user'],

@@ -103,6 +103,19 @@ tr.flash td { animation: flash 2.4s ease-out; } @keyframes flash { from { backgr
 .form-grid { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: end; } .feats { display: flex; flex-direction: column; gap: 10px; }
 .feat { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; } .feat input { margin-top: 3px; accent-color: var(--accent); } .feat span { display: flex; flex-direction: column; }
 
+/* forms editor */
+.forms-layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 1000px) { .forms-layout { grid-template-columns: 1fr; } }
+.col.tight { gap: 8px; } .form-list { display: flex; flex-direction: column; gap: 6px; }
+.form-item { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; background: var(--panel2); border: 1px solid var(--border); border-left: 3px solid transparent; border-radius: 6px; padding: 7px 10px; cursor: pointer; }
+.form-item:hover { border-color: var(--muted); } .form-item.on { border-left-color: var(--accent); background: var(--bg); }
+.forms-layout .tbl-wrap { max-height: none; } .forms-layout td, .forms-layout th { vertical-align: middle; }
+.forms-layout .data-t td { padding: 3px 6px; } .forms-layout select { max-width: 150px; }
+tr.sec-row th { position: static; background: var(--panel); color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding-top: 10px; }
+input.cell.left { text-align: left; font-family: inherit; } input.cell.left.short { width: 64px; }
+.tag { margin-left: 6px; border: 1px solid var(--border); border-radius: 9px; padding: 0 6px; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+.setup-note { margin-bottom: 14px; padding: 9px 14px; border-left: 3px solid var(--warn); }
+
 /* toasts */
 #toasts { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 50; max-width: 520px; }
 .toast { background: var(--panel2); border: 1px solid var(--border); border-left: 3px solid var(--ok); border-radius: 6px; padding: 9px 14px; box-shadow: 0 6px 20px #0008; transition: opacity .5s; word-break: break-word; }
