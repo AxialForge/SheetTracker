@@ -52,7 +52,7 @@ Settings → **Profiles** keeps one fully separate database per job: its own for
 
 Settings → **Names** renames the two identifiers for the open profile (for example *Station* and *Product* instead of *Line* and *Part No.*). Everything on screen, in exports and in the weekly report follows. The first identifier must be a whole number; the second can be any text.
 
-`templates/` has ready-made files: `blank-form-template.xlsx` (instructions + headers) and `press-setup-forms.xlsx` (the four Viking Forge forms). Regenerate them with `npm run templates`.
+`templates/` has ready-made files: `blank-form-template.xlsx` (instructions + headers), `press-setup-forms.xlsx` (the four Viking Forge forms) and `form-10899-2500T-setup-sheet.xlsx` (the printed 2500 Ton press setup sheet, field for field in the sheet's order: 42 fields, lines 5 / 7 / 9). Regenerate them with `npm run templates`.
 
 Backups are taken on save (max one per 5 min), before restore / import / migration, kept to the newest 100. Restore runs an integrity check and backs up the current database first. Put the backup folder on a different drive (Settings → Backup & restore).
 
