@@ -138,7 +138,52 @@ app.whenReady().then(async () => {
     return out;
   })()`);
   console.log('template', JSON.stringify({ modalShown, ...imported }));
-  const typesOk = Object.values(types).every(Boolean) && modalShown && Object.values(imported).every(Boolean);
+  // Profiles: a second, separate database; the window reloads onto it
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const reloaded = () => new Promise((r) => win.webContents.once('did-finish-load', r));
+  let wait = reloaded();
+  await run(`void ST.main('profile:create', { name: 'Second job', blank: true, copyForms: false }); 0`);
+  await wait; await sleep(900);
+  const second = await run(`(async () => {
+    await ST.show('dashboard');
+    const out = {};
+    out.emptyGuide = document.body.innerText.includes('Set up this profile');
+    out.switcher = !!document.querySelector('.profile-sel');
+    out.separate = (await ST.api('getFields')).length === 0 && (await ST.api('listEntries', {})).total === 0 && (await ST.api('getForms')).length === 0;
+    return out;
+  })()`);
+  await shot('crimson-profile-empty');
+  await run(`ST.main = ((orig) => (name, ...a) => (name === 'template:pick' ? Promise.resolve(${JSON.stringify(tpl)}) : orig(name, ...a)))(ST.main); ST.tabs.forms.sel = 200; ST.show('forms').then(() => { window.__imp = ST.tabs.forms.importTemplate(async () => { await ST.refreshCore(); }); }); 0`);
+  await sleep(1200);
+  await run(`document.querySelector('.modal .btn.primary').click(); 0`);
+  await run(`window.__imp.then(() => true)`);
+  const second2 = await run(`(async () => {
+    const out = {};
+    await ST.api('setSettings', { label_line: 'Station', label_part: 'Product' });
+    await ST.refreshCore();
+    out.labels = ST.L.line === 'Station' && ST.L.parts === 'Products';
+    out.forms = (await ST.api('getForms')).map((f) => f.form_no).sort((a, b) => a - b).join(',') === '200,10899';
+    out.lines = (await ST.api('getLineForms')).some((l) => l.line === 12 && l.form_no === 200);
+    const E = ST.tabs.entry; E.S = null; await ST.show('entry'); await E.setLinePart('12', 'P-1');
+    const text = document.body.innerText.toLowerCase();
+    out.entryUsesLabels = text.includes('product') && text.includes('station 12') && !text.includes('part no');
+    return out;
+  })()`);
+  await shot('crimson-profile-job');
+  wait = reloaded();
+  await run(`void ST.main('profile:switch', 'default'); 0`);
+  await wait; await sleep(900);
+  const back = await run(`(async () => {
+    await ST.show('dashboard');
+    const out = {};
+    out.entriesBack = (await ST.api('listEntries', {})).total > 100;
+    out.labelsBack = ST.L.line === 'Line';
+    out.fieldsBack = (await ST.api('getFields')).length > 50;
+    return out;
+  })()`);
+  console.log('profiles', JSON.stringify({ ...second, ...second2, ...back }));
+  const profilesOk = [second, second2, back].every((o) => Object.values(o).every(Boolean));
+  const typesOk = profilesOk && Object.values(types).every(Boolean) && modalShown && Object.values(imported).every(Boolean);
   const bad = errors.length || !pdfOk || !flowOk || !typesOk;
   if (errors.length) console.error('Renderer errors:\n' + errors.join('\n'));
   console.log(bad ? 'SMOKE FAILED' : `SMOKE OK (${THEMES.length * TABS.length} screenshots in docs/screenshots)`);

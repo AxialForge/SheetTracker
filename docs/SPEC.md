@@ -89,3 +89,9 @@ Light: warm off-white ground #f4f1ea, panel #fffdf8, ink #1c1b19, accent burnt o
 - Mockup is a static comp at 1280×840: some cards clip in the PNGs; real app should scroll/resize. All mockup data is sample.
 - `seed_from_sheets.py` loads baseline setpoints from 6 sample sheets (transcribed from scans; verify).
 - `existing_app_v3/` is the authoritative current code (app.py ~660 lines, db.py ~380).
+
+## 11. v0.3 additions
+- **Field types**: number, text, choice, yes/no, rating (1–N), ratio (x of y), time of day, duration, date. Values are stored in canonical text; comparison and charting are type-aware (`app/shared/types.js`). Optional min/max flags (never blocks) a number-like value; a value that does not fit its type is refused on save.
+- **Sections** live in the database (editable via templates), not in code.
+- **Excel form templates**: export a form or all forms (Section, Field, Type, Unit, Entry, Role, Options, Min, Max, Key + a Forms sheet); import shows a plan (new / edited / membership / lines) before applying; fields absent from the file are only removed from a form on request; stored entries are never touched.
+- **Profiles**: one separate database per job (own forms, fields, entries, photos, backups). Configurable names for the two identifiers (first must be a whole number). The original data folder is the first profile.

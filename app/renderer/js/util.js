@@ -51,8 +51,22 @@ ST.opt = (name) => ST.state.settings[`opt_${name}`] === '1';
 ST.applyTheme = (name) => { document.documentElement.dataset.theme = name || 'crimson'; };
 ST.cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 
+// What this job calls its two identifiers (Line + Part No. by default; a profile can rename them).
+ST.pl = (w) => (/(s|x|z|ch|sh)$/i.test(w) ? `${w}es` : `${w}s`);
+ST.setLabels = (settings) => {
+  const line = (settings.label_line || 'Line').trim() || 'Line';
+  const part = (settings.label_part || 'Part No.').trim() || 'Part No.';
+  const partShort = part.replace(/\s*(no\.?|number|#)$/i, '').trim() || part;
+  ST.L = { line, lines: ST.pl(line), part, partShort, parts: ST.pl(partShort) };
+};
+ST.setLabels({});
+ST.lineName = (n) => `${ST.L.line} ${n}`;
+
 ST.refreshCore = async function refreshCore() {
-  const [settings, fields, lineForms, forms, sections] = await Promise.all([ST.api('getSettings'), ST.api('getFields'), ST.api('getLineForms'), ST.api('getForms'), ST.api('getSections')]);
+  const [settings, fields, lineForms, forms, sections, prof] = await Promise.all([ST.api('getSettings'), ST.api('getFields'), ST.api('getLineForms'), ST.api('getForms'), ST.api('getSections'), ST.main('profile:list')]);
+  ST.setLabels(settings);
+  ST.state.profiles = prof.profiles;
+  ST.state.profileId = prof.active;
   ST.state.settings = settings;
   ST.state.fields = fields;
   ST.state.lineForms = lineForms;

@@ -195,12 +195,12 @@ ST.tabs.entry = {
     const key = `${S.line}|${S.part}`;
     const sure = S.newPartOk === key;
     const near = info.similar.map((s) => h('button', { class: 'btn sm', type: 'button', text: `Use ${s.part_no} (${s.entries} entr${s.entries === 1 ? 'y' : 'ies'}, last ${ST.fmtDate(s.last_ts, true)})`, onclick: () => this.setLinePart(S.line, s.part_no) }));
-    const other = info.otherLines.length ? ` Also logged on ${info.otherLines.map((o) => `Line ${o.line}`).join(', ')}.` : '';
+    const other = info.otherLines.length ? ` Also logged on ${info.otherLines.map((o) => ST.lineName(o.line)).join(', ')}.` : '';
     return h('div', { class: `card setup-note ${sure ? 'ok' : 'warn'}`, id: 'newpart-note' },
-      h('span', {}, h('b', { text: sure ? 'New part confirmed. ' : 'New part? ' }),
-        `No history for “${S.part}” on Line ${S.line}. ${sure ? 'Its first entry becomes the baseline.' : 'A mistyped part number starts a separate history with nothing to compare against.'}${other}`),
+      h('span', {}, h('b', { text: sure ? `New ${ST.L.partShort.toLowerCase()} confirmed. ` : `New ${ST.L.partShort.toLowerCase()}? ` }),
+        `No history for “${S.part}” on ${ST.lineName(S.line)}. ${sure ? 'Its first entry becomes the baseline.' : `A mistyped ${ST.L.partShort.toLowerCase()} number starts a separate history with nothing to compare against.`}${other}`),
       near.length ? h('div', { class: 'toolbar' }, h('span', { class: 'muted', text: 'Did you mean:' }), near) : null,
-      sure ? null : h('div', { class: 'toolbar' }, h('button', { class: 'btn primary sm', type: 'button', text: 'Yes, this is a new part', onclick: () => { S.newPartOk = key; this.draw(); } })));
+      sure ? null : h('div', { class: 'toolbar' }, h('button', { class: 'btn primary sm', type: 'button', text: `Yes, this is a new ${ST.L.partShort.toLowerCase()}`, onclick: () => { S.newPartOk = key; this.draw(); } })));
   },
 
   // Shown while a correction is being typed: the original is voided when this is saved.
@@ -208,7 +208,7 @@ ST.tabs.entry = {
     const { h } = ST; const S = this.S; const c = S.corrects;
     if (!c) return null;
     return h('div', { class: 'card setup-note warn' },
-      h('span', {}, h('b', { text: `Correcting entry #${c.id}` }), ` (Line ${c.line} · ${c.part_no} · ${ST.fmtDate(c.entry_ts)}). Saving voids the original: it stays on record but no longer counts as a change, and this entry replaces it.`),
+      h('span', {}, h('b', { text: `Correcting entry #${c.id}` }), ` (${ST.lineName(c.line)} · ${c.part_no} · ${ST.fmtDate(c.entry_ts)}). Saving voids the original: it stays on record but no longer counts as a change, and this entry replaces it.`),
       h('div', { class: 'toolbar' },
         h('label', { class: 'fld grow' }, h('span', { text: 'Reason for the correction (required)' }),
           h('input', { type: 'text', id: 'f-correct-reason', value: S.correctReason, placeholder: 'e.g. Typo in billet temp', oninput: (e) => { S.correctReason = e.target.value; } })),
@@ -218,14 +218,14 @@ ST.tabs.entry = {
   draw() {
     const { h } = ST; const S = this.S; const root = this.root;
     const lines = ST.state.lineForms.map((l) => String(l.line));
-    const lineSel = ST.select(lines.map((l) => [l, `Line ${l}`]), S.line, { id: 'f-line', 'aria-label': 'Line' });
+    const lineSel = ST.select(lines.map((l) => [l, ST.lineName(l)]), S.line, { id: 'f-line', 'aria-label': ST.L.line });
     lineSel.onchange = () => this.setLinePart(lineSel.value, '');
-    const partIn = h('input', { type: 'text', id: 'f-part', list: 'parts-list', placeholder: 'Part No.', value: S.part, autocomplete: 'off', 'aria-label': 'Part No.' });
+    const partIn = h('input', { type: 'text', id: 'f-part', list: 'parts-list', placeholder: ST.L.part, value: S.part, autocomplete: 'off', 'aria-label': ST.L.part });
     partIn.onchange = () => this.setLinePart(S.line, partIn.value.trim());
     const hd = (label, ctrl) => h('label', { class: 'fld' }, h('span', { text: label }), ctrl);
     const hdr = h('div', { class: 'entry-head card' },
-      hd('Line #', lineSel),
-      hd('Part No.', partIn), h('datalist', { id: 'parts-list' }, (S.parts || []).map((p) => h('option', { value: p }))),
+      hd(`${ST.L.line} #`, lineSel),
+      hd(ST.L.part, partIn), h('datalist', { id: 'parts-list' }, (S.parts || []).map((p) => h('option', { value: p }))),
       h('div', { class: 'fld' }, h('span', { text: 'Form' }), h('span', { class: 'badge', text: S.form ? `Form ${S.form}` : '—' })),
       hd('Date / time', h('input', { type: 'datetime-local', value: S.ts, onchange: (e) => { S.ts = e.target.value; } })),
       hd('Sheet rev', h('input', { type: 'text', value: S.header.sheet_rev, oninput: (e) => { S.header.sheet_rev = e.target.value; } })),
@@ -262,7 +262,7 @@ ST.tabs.entry = {
 
     const setupNote = S.line && S.part && S.initialCount
       ? h('div', { class: 'card setup-note' }, S.first
-        ? h('span', {}, h('b', { text: 'First entry for this Line + Part. ' }), `Fill the ${S.initialCount} setup field${S.initialCount === 1 ? '' : 's'} too; later entries only ask for the tracked fields.`)
+        ? h('span', {}, h('b', { text: `First entry for this ${ST.L.line} + ${ST.L.partShort}. ` }), `Fill the ${S.initialCount} setup field${S.initialCount === 1 ? '' : 's'} too; later entries only ask for the tracked fields.`)
         : h('label', { class: 'chk' }, h('input', { type: 'checkbox', checked: S.showInitial, onchange: (e) => { S.showInitial = e.target.checked; this.writeShowInitial(S.showInitial); this.applyRole(); this.draw(); } }), `Show setup fields (${S.initialCount})`))
       : null;
     const lists = h('div', { hidden: true }, Object.entries(S.suggest || {}).map(([k, vals]) => h('datalist', { id: `sug-${k}` }, vals.map((v) => h('option', { value: v })))));
@@ -275,8 +275,8 @@ ST.tabs.entry = {
       h('span', { class: 'muted', text: 'Ctrl+S' }),
       h('button', { class: 'btn primary', id: 'save-btn', text: `Save Entry (${nChanges} change${nChanges === 1 ? '' : 's'})`, onclick: () => this.save() }));
 
-    const body = !S.line ? h('p', { class: 'muted pad', text: 'Add a line in Settings → Line → Form.' })
-      : !S.part ? h('p', { class: 'muted pad', text: 'Pick or type a Part No. to load the form and last values.' })
+    const body = !S.line ? h('p', { class: 'muted pad', text: `Add a ${ST.L.line.toLowerCase()} in Settings, or set up forms in Forms → Import template.` })
+      : !S.part ? h('p', { class: 'muted pad', text: `Pick or type a ${ST.L.part} to load the form and last values.` })
         : h('div', { class: 'entry-body' }, h('div', { class: 'col' }, secs), side);
     root.replaceChildren(...[hdr, this.correctBanner(), this.partBanner(), setupNote, body, bar, lists].filter(Boolean));
   },
@@ -310,7 +310,7 @@ ST.tabs.entry = {
     try {
       if (S.corrects && !S.correctReason.trim()) { ST.toast('Enter a reason for the correction first.', 'err'); document.getElementById('f-correct-reason')?.focus(); return; }
       if (S.partInfo && !S.partInfo.exists && S.newPartOk !== `${S.line}|${S.part}`) {
-        ST.toast('New part? Confirm it (or pick the existing part) before saving.', 'err');
+        ST.toast(`New ${ST.L.partShort.toLowerCase()}? Confirm it (or pick the existing one) before saving.`, 'err');
         document.getElementById('newpart-note')?.scrollIntoView({ block: 'center' });
         return;
       }

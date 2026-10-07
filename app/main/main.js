@@ -6,6 +6,7 @@ const path = require('node:path');
 const { SetupService, dayLocal } = require('./service');
 const { toCsv, toXlsx } = require('./export');
 const { reportHtml } = require('./report');
+const { ProfileManager } = require('./profiles');
 
 const API = new Set([
   'getSettings', 'setSettings', 'getPaths', 'getFields', 'fieldsForForm', 'updateField', 'addField', 'deleteField',
@@ -19,15 +20,37 @@ const API = new Set([
 
 let svc;
 let win;
+let pm;
+
+const rootDir = () => process.env.SETUP_TRACKER_DATA_DIR || path.join(os.homedir(), '.setup_tracker');
+function openProfile(id) {
+  return new SetupService({ dataDir: pm.dirOf(id), blank: !!pm.get(id).blank });
+}
+function updateTitle() {
+  const list = pm.list();
+  const name = list.find((p) => p.active)?.name;
+  win?.setTitle(list.length > 1 && name ? `Setup Tracker — ${name}` : 'Setup Tracker');
+}
+// Open another profile's database and reload the window onto it.
+function switchTo(id) {
+  const next = openProfile(id);
+  const prev = svc;
+  svc = next;
+  pm.setActive(id);
+  try { prev?.close(); } catch { /* ignore */ }
+  updateTitle();
+  win?.webContents.reload();
+}
 
 function reportDir() {
   const s = svc.getSettings();
-  return s.report_dir || path.join(os.homedir(), 'Documents', 'SetupTracker', 'Reports');
+  const id = pm.activeId();
+  return s.report_dir || path.join(os.homedir(), 'Documents', 'SetupTracker', 'Reports', ...(id === 'default' ? [] : [id]));
 }
 
 async function makePdf(endDay) {
   const data = svc.weeklyReportData(endDay);
-  const html = reportHtml(data, { version: app.getVersion() });
+  const html = reportHtml(data, { version: app.getVersion(), title: pm.get(pm.activeId()).name });
   const w = new BrowserWindow({ show: false, webPreferences: { sandbox: true } });
   try {
     await w.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
@@ -63,6 +86,23 @@ function register() {
   const h = (name, fn) => ipcMain.handle(name, async (_e, ...a) => {
     try { return { ok: true, value: await fn(...a) }; } catch (e) { return { ok: false, error: e.message }; }
   });
+  h('profile:list', () => ({ active: pm.activeId(), profiles: pm.list() }));
+  h('profile:switch', (id) => { switchTo(id); return true; });
+  h('profile:create', ({ name, blank = true, copyForms = false }) => {
+    const id = pm.create({ name, blank });
+    try {
+      if (copyForms) {
+        const tmp = path.join(os.tmpdir(), `st-forms-${Date.now()}.xlsx`);
+        fs.writeFileSync(tmp, svc.exportTemplate({ forms: 'all' }));
+        const fresh = openProfile(id);
+        try { fresh.applyTemplate(tmp); } finally { fresh.close(); try { fs.unlinkSync(tmp); } catch { /* ignore */ } }
+      }
+      switchTo(id);
+    } catch (e) { try { pm.remove(id); } catch { /* ignore */ } throw e; }
+    return id;
+  });
+  h('profile:rename', (id, name) => { pm.rename(id, name); updateTitle(); return pm.list(); });
+  h('profile:remove', (id) => ({ kept: pm.remove(id) }));
   h('app:info', () => ({ version: app.getVersion(), electron: process.versions.electron, platform: process.platform }));
   h('dlg:pickPhoto', async () => {
     const r = await dialog.showOpenDialog(win, { title: 'Attach sheet photo', properties: ['openFile'], filters: [{ name: 'Images / PDF', extensions: ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tif', 'tiff', 'webp', 'pdf'] }] });
@@ -130,6 +170,7 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, '..', 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  win.on('page-title-updated', (e) => e.preventDefault()); // the title shows the active profile
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
   return win;
@@ -142,7 +183,8 @@ else {
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
     try {
-      svc = new SetupService({ dataDir: process.env.SETUP_TRACKER_DATA_DIR || undefined });
+      pm = new ProfileManager(rootDir());
+      svc = openProfile(pm.activeId());
     } catch (e) {
       dialog.showErrorBox('Setup Tracker cannot open its database', String(e.stack || e));
       app.quit();
@@ -150,6 +192,7 @@ else {
     }
     register();
     createWindow();
+    updateTitle();
     win.webContents.once('did-finish-load', () => setTimeout(autoReport, 1500));
     app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
   });

@@ -60,6 +60,7 @@ textarea { width: 100%; resize: vertical; } input.short { width: 90px; }
 .chg { color: var(--changed-ink); background: var(--changed); padding: 1px 7px; border-radius: 4px; white-space: nowrap; }
 .linegrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 8px; }
 .ls { border: 1px solid var(--border); border-radius: 6px; padding: 6px 9px; display: flex; flex-direction: column; } .ls.ok { border-left: 3px solid var(--ok); } .ls.miss { border-left: 3px solid var(--warn); }
+.profile-sel { background: var(--panel); max-width: 240px; }
 .status-pill { display: inline-block; min-width: 72px; text-align: center; padding: 1px 8px; border-radius: 10px; font-size: 11px; border: 1px solid var(--border); }
 .status-pill.done { color: var(--ok); border-color: var(--ok); } .status-pill.not-yet { color: var(--warn); border-color: var(--warn); } .status-pill.deferred, .status-pill.declined { color: var(--muted); }
 .big { font-size: 20px; margin: 0 0 4px; }

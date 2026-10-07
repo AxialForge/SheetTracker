@@ -8,7 +8,7 @@ ST.tabs.data = {
   // Void takes a wrong entry out of change detection, trends and exports; it stays on record with the reason.
   async voidEntry(e, root) {
     const why = await ST.ask({ title: `Void entry #${e.id}?`, label: 'Reason (required)', ok: 'Void entry',
-      message: `Line ${e.line} · ${e.part_no} · ${ST.fmtDate(e.entry_ts)}. It stays on record but no longer counts as a change, in trends, exports or reports.` });
+      message: `${ST.lineName(e.line)} · ${e.part_no} · ${ST.fmtDate(e.entry_ts)}. It stays on record but no longer counts as a change, in trends, exports or reports.` });
     if (!why) return;
     try { await ST.api('voidEntry', e.id, why); ST.toast(`Entry #${e.id} voided`); this.render(root); } catch (err) { ST.fail(err); }
   },
@@ -21,7 +21,7 @@ ST.tabs.data = {
     const uniqParts = [...new Set(parts)];
     if (f.part && !uniqParts.includes(f.part)) f.part = '';
 
-    const lineSel = ST.select([['', 'All lines'], ...lines.map((l) => [String(l), `Line ${l}`])], f.line, { 'aria-label': 'Line' });
+    const lineSel = ST.select([['', `All ${ST.L.lines.toLowerCase()}`], ...lines.map((l) => [String(l), ST.lineName(l)])], f.line, { 'aria-label': ST.L.line });
     lineSel.onchange = () => { f.line = lineSel.value; f.part = ''; this.render(root); };
     const partSel = ST.select([['', 'All parts'], ...uniqParts], f.part, { 'aria-label': 'Part' });
     partSel.onchange = () => { f.part = partSel.value; this.render(root); };
@@ -36,7 +36,7 @@ ST.tabs.data = {
     const cols = ST.state.fields.filter((fl) => fl.visible && used.has(fl.key));
     const showReason = ST.opt('reasons'); const showPhoto = ST.opt('photos');
 
-    const head = h('tr', {}, h('th', { class: 'sticky s0', text: 'Line' }), h('th', { class: 'sticky s1', text: 'Part No.' }), h('th', { text: 'Date/Time' }), h('th', { text: 'Rev' }), h('th', { class: 'notes-col', text: 'Notes' }),
+    const head = h('tr', {}, h('th', { class: 'sticky s0', text: ST.L.line }), h('th', { class: 'sticky s1', text: ST.L.part }), h('th', { text: 'Date/Time' }), h('th', { text: 'Rev' }), h('th', { class: 'notes-col', text: 'Notes' }),
       showReason ? h('th', { text: 'Reason' }) : null, showPhoto ? h('th', { text: 'Photo' }) : null, h('th', {}),
       cols.map((c) => h('th', { class: 'num', title: c.has_sp ? 'Actual (hover cell for sheet setpoint)' : 'Reading', text: c.label + (c.unit ? ` (${c.unit})` : '') })));
 

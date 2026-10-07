@@ -184,3 +184,17 @@ test('service: sections live in the database; add/rename/delete', () => {
   svc.renameSection('coolant_loop', 'Coolant');
   assert.equal(svc.getSections().find((x) => x.key === 'coolant_loop').label, 'Coolant');
 });
+
+test('service: identifier names flow into exports, reports and messages', () => {
+  const { svc } = make();
+  entry(svc, '2026-03-17T08:00', { billet_temp: { actual: '2250' } });
+  entry(svc, '2026-03-18T08:00', { billet_temp: { actual: '2275' } });
+  assert.deepEqual(svc.exportRows({}).headers.slice(0, 2), ['Line', 'Part No']);
+  svc.setSettings({ label_line: 'Station', label_part: 'Product' });
+  assert.deepEqual(svc.exportRows({}).headers.slice(0, 2), ['Station', 'Product']);
+  assert.throws(() => svc.saveEntry({ line: 99, part_no: 'X', values: { billet_temp: { actual: '1' } } }), /Station 99 is not configured/);
+  assert.throws(() => svc.saveEntry({ line: 5, part_no: '', values: { billet_temp: { actual: '1' } } }), /Product is required/);
+  const html = require('../app/main/report').reportHtml(svc.weeklyReportData('2026-03-18'), { title: 'Job X' });
+  assert.match(html, /Station 5/); assert.match(html, /<th>Station<\/th><th>Product<\/th>|<th>S5<\/th>/); assert.match(html, /Job X/);
+  assert.doesNotMatch(html, /Viking Forge/);
+});

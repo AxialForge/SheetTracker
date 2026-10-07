@@ -35,45 +35,45 @@ ST.tabs.settings = {
 
     // ---- lines
     const forms = ST.state.forms.map((f) => f.form_no);
-    const lineRows = ST.state.lineForms.map((l) => h('tr', {}, h('td', { class: 'mono', text: `Line ${l.line}` }), h('td', { class: 'muted', text: l.tonnage }),
+    const lineRows = ST.state.lineForms.map((l) => h('tr', {}, h('td', { class: 'mono', text: ST.lineName(l.line) }), h('td', { class: 'muted', text: l.tonnage }),
       h('td', {}, ST.select(forms.includes(l.form_no) ? forms : [...forms, l.form_no], l.form_no, { onchange: guard(async (e) => { await ST.api('setLineForm', l.line, e.target.value); await ST.refreshCore(); ST.toast('Saved'); }) })),
       h('td', {}, h('button', { class: 'btn ghost sm', text: 'Remove', onclick: guard(async () => { await ST.api('removeLine', l.line); await ST.refreshCore(); again(); }) }))));
     const nl = { line: '', form: String(forms[0] ?? '') };
-    const lineCard = ST.card('Line → Form', h('div', {}, h('table', { class: 'data-t slim' }, h('tbody', {}, lineRows)),
-      h('div', { class: 'toolbar' }, h('input', { type: 'number', min: 1, class: 'short', placeholder: 'Line #', oninput: (e) => { nl.line = e.target.value; } }),
+    const lineCard = ST.card(`${ST.L.line} → Form`, h('div', {}, h('table', { class: 'data-t slim' }, h('tbody', {}, lineRows)),
+      h('div', { class: 'toolbar' }, h('input', { type: 'number', min: 1, class: 'short', placeholder: `${ST.L.line} #`, oninput: (e) => { nl.line = e.target.value; } }),
         ST.select(forms.map(String), nl.form, { onchange: (e) => { nl.form = e.target.value; } }),
-        h('button', { class: 'btn', text: 'Add line', onclick: guard(async () => { await ST.api('setLineForm', nl.line, nl.form); await ST.refreshCore(); again(); }) })),
+        h('button', { class: 'btn', text: `Add ${ST.L.line.toLowerCase()}`, onclick: guard(async () => { await ST.api('setLineForm', nl.line, nl.form); await ST.refreshCore(); again(); }) })),
       h('p', { class: 'muted', text: 'Create forms and choose which fields each one carries in the Forms tab.' })));
 
     // ---- parts: fix a mistyped part number, or merge two spellings into one history
     const renamePart = (p) => guard(async () => {
-      const to = await ST.ask({ title: `Rename ${p.part_no} (Line ${p.line})`, label: 'New part number', value: p.part_no, ok: 'Rename',
-        message: 'If the new number already exists on this line, the two histories are merged. Entry values are not changed.' });
+      const to = await ST.ask({ title: `Rename ${p.part_no} (${ST.lineName(p.line)})`, label: `New ${ST.L.partShort.toLowerCase()} number`, value: p.part_no, ok: 'Rename',
+        message: `If the new number already exists on this ${ST.L.line.toLowerCase()}, the two histories are merged. Entry values are not changed.` });
       if (!to || to === p.part_no) return;
       const hit = await ST.api('checkPart', p.line, to);
       if (hit.exists && hit.canonical !== p.part_no) {
         const into = parts.find((x) => x.line === p.line && x.part_no === hit.canonical);
-        if (!confirm(`${hit.canonical} already exists on Line ${p.line} (${into?.entries ?? 0} entries).\n\nMerge the ${p.entries} entr${p.entries === 1 ? 'y' : 'ies'} of ${p.part_no} into it? Changes will be recalculated across the combined history.`)) return;
+        if (!confirm(`${hit.canonical} already exists on ${ST.lineName(p.line)} (${into?.entries ?? 0} entries).\n\nMerge the ${p.entries} entr${p.entries === 1 ? 'y' : 'ies'} of ${p.part_no} into it? Changes will be recalculated across the combined history.`)) return;
       }
       const r = await ST.api('renamePart', p.line, p.part_no, to);
       ST.toast(r.merged ? `Merged into ${r.part_no}` : `Renamed to ${r.part_no}`);
       await ST.refreshCore(); again();
     });
-    const partRows = parts.map((p) => h('tr', {}, h('td', { class: 'mono', text: `Line ${p.line}` }), h('td', { text: p.part_no }),
+    const partRows = parts.map((p) => h('tr', {}, h('td', { class: 'mono', text: ST.lineName(p.line) }), h('td', { text: p.part_no }),
       h('td', { class: 'muted', text: `${p.entries} entr${p.entries === 1 ? 'y' : 'ies'}` }), h('td', { class: 'muted', text: `last ${ST.fmtDate(p.last_ts, true)}` }),
       h('td', {}, h('button', { class: 'btn ghost sm', text: 'Rename / merge…', onclick: renamePart(p) }))));
-    const partsCard = ST.card(`Parts (${parts.length})`, h('div', {},
-      h('p', { class: 'muted', text: 'Part numbers are matched ignoring case and extra spaces. If a part was typed wrongly, rename it here; renaming onto an existing part merges the two histories.' }),
-      parts.length ? h('div', { class: 'tbl-wrap short' }, h('table', { class: 'data-t slim' }, h('tbody', {}, partRows))) : h('p', { class: 'muted', text: 'No parts yet.' })), { class: 'span2' });
+    const partsCard = ST.card(`${ST.L.parts} (${parts.length})`, h('div', {},
+      h('p', { class: 'muted', text: `${ST.L.part}s are matched ignoring case and extra spaces. If one was typed wrongly, rename it here; renaming onto an existing one merges the two histories.` }),
+      parts.length ? h('div', { class: 'tbl-wrap short' }, h('table', { class: 'data-t slim' }, h('tbody', {}, partRows))) : h('p', { class: 'muted', text: `No ${ST.L.parts.toLowerCase()} yet.` })), { class: 'span2' });
 
     // ---- optional features
     const feat = (key, label, hint) => h('label', { class: 'feat' }, h('input', { type: 'checkbox', checked: s[`opt_${key}`] === '1', onchange: guard(async (e) => { await saveSetting(`opt_${key}`)(e); await again(); }) }), h('span', {}, h('b', { text: label }), h('small', { class: 'muted', text: hint })));
     const featCard = ST.card('Optional features', h('div', { class: 'feats' },
       feat('reasons', 'Change reasons', 'Reason chips on each entry'),
       feat('photos', 'Sheet photo attachments', 'Copied into the photos folder and included in backups'),
-      feat('missing', 'Missing-entry tracking', 'Dashboard shows lines not logged today'),
+      feat('missing', 'Missing-entry tracking', `Dashboard shows ${ST.L.lines.toLowerCase()} not logged today`),
       feat('drift', 'Setpoint drift alerts', 'Actual ≠ sheet setpoint for N entries in a row'),
-      feat('compare', 'Compare lines chart', 'Overlay lines on the Dashboard trend'),
+      feat('compare', `Compare ${ST.L.lines.toLowerCase()} chart`, `Overlay ${ST.L.lines.toLowerCase()} on the Dashboard trend`),
       h('label', { class: 'inl' }, 'Drift after N entries ', h('input', { type: 'number', min: 2, max: 20, class: 'short', value: s.drift_n, onchange: saveSetting('drift_n') }))));
 
     // ---- appearance
@@ -81,6 +81,32 @@ ST.tabs.settings = {
       h('label', { class: 'fld' }, h('span', { text: 'Theme' }), ST.select([['crimson', 'Crimson (dark)'], ['amber', 'Amber (dark)'], ['steel', 'Steel (dark)']], s.theme, { onchange: saveSetting('theme') })),
       h('label', { class: 'fld' }, h('span', { text: 'Date format' }), ST.select([['iso', '2026-10-06 14:30'], ['us', '10/06/2026 2:30 PM'], ['eu', '06/10/2026 14:30']], s.date_format, { onchange: guard(async (e) => { await saveSetting('date_format')(e); }) })),
       h('label', { class: 'fld' }, h('span', { text: 'Default “entered by”' }), h('input', { type: 'text', value: s.entered_by, onchange: saveSetting('entered_by') }))));
+
+    // ---- what this job calls things (a profile can say "Station" and "Product" instead of "Line" and "Part No.")
+    const names = ST.card('Names', h('div', { class: 'col tight' },
+      h('div', { class: 'form-grid' },
+        h('label', { class: 'fld' }, h('span', { text: 'First identifier' }), h('input', { type: 'text', value: s.label_line || 'Line', onchange: guard(async (e) => { await saveSetting('label_line')(e); await ST.refreshCore(); again(); }) })),
+        h('label', { class: 'fld' }, h('span', { text: 'Second identifier' }), h('input', { type: 'text', value: s.label_part || 'Part No.', onchange: guard(async (e) => { await saveSetting('label_part')(e); await ST.refreshCore(); again(); }) }))),
+      h('p', { class: 'muted', text: `Entries are filed under these two. The first must be a whole number (a line, press, cell or station number); the second can be any text. For this profile they read “${ST.L.line} 5 · ${ST.L.part}”.` })));
+
+    // ---- profiles: one separate database per job
+    const profs = ST.state.profiles;
+    const profRows = profs.map((p) => h('tr', {},
+      h('td', {}, h('input', { type: 'text', class: 'cell left', value: p.name, 'aria-label': `Name of profile ${p.name}`, onchange: guard(async (e) => { await ST.main('profile:rename', p.id, e.target.value); ST.toast('Renamed'); again(); }) })),
+      h('td', { class: 'muted', text: p.blank ? 'from a template' : 'press setups' }),
+      h('td', {}, p.active ? h('span', { class: 'status-pill done', text: 'Open now' }) : h('button', { class: 'btn sm', text: 'Switch to', onclick: guard(() => ST.main('profile:switch', p.id)) })),
+      h('td', {}, h('button', { class: 'btn ghost sm', text: 'Open folder', onclick: guard(() => ST.main('shell:openFolder', p.path)) })),
+      h('td', {}, p.active || p.id === 'default' ? null : h('button', { class: 'btn ghost sm', text: 'Remove from list', title: 'The files stay on disk; nothing is deleted', onclick: guard(async () => {
+        if (!confirm(`Remove “${p.name}” from the list?\n\nIts data files are not deleted.`)) return;
+        const r = await ST.main('profile:remove', p.id); ST.toast(`Removed. Files kept in ${r.kept}`); again(); }) }))));
+    const np = { name: '', start: 'blank' };
+    const profCard = ST.card('Profiles (jobs)', h('div', { class: 'col tight' },
+      h('p', { class: 'muted', text: 'Each profile is a completely separate database: its own forms, fields, entries, photos and backups. Use one per job or site. Switching reloads the window.' }),
+      h('table', { class: 'data-t slim' }, h('tbody', {}, profRows)),
+      h('div', { class: 'toolbar' },
+        h('input', { type: 'text', placeholder: 'New profile name', 'aria-label': 'New profile name', oninput: (e) => { np.name = e.target.value; } }),
+        ST.select([['blank', 'Start empty (then import a template)'], ['copy', 'Start with a copy of these forms']], 'blank', { 'aria-label': 'Start from', onchange: (e) => { np.start = e.target.value; } }),
+        h('button', { class: 'btn primary', text: 'Create and open', onclick: guard(async () => { await ST.main('profile:create', { name: np.name, blank: true, copyForms: np.start === 'copy' }); }) }))), { class: 'span2' });
 
     // ---- backup
     const bRows = backups.slice(0, 30).map((b) => h('tr', {}, h('td', { class: 'mono', text: b.name }), h('td', { class: 'muted', text: b.reason }), h('td', { class: 'muted', text: `${(b.size / 1024).toFixed(0)} KB` }), h('td', { class: 'muted', text: ST.fmtDate(new Date(b.mtime).toISOString().slice(0, 16)) }),
@@ -103,7 +129,7 @@ ST.tabs.settings = {
       h('div', { class: 'toolbar' },
         h('button', { class: 'btn', text: 'Open data folder', onclick: guard(() => ST.main('shell:openFolder', paths.dataDir)) }),
         h('button', { class: 'btn', text: 'Import a v3 database…', onclick: guard(async () => { const r = await ST.main('db:import'); if (r) { ST.toast(`Imported ${r.added} entries (${r.skipped} duplicates skipped)`); await ST.refreshCore(); again(); } }) })),
-      h('div', { class: 'toolbar' },
+      s.blank_profile === '1' ? null : h('div', { class: 'toolbar' },
         h('button', { class: 'btn ghost', text: 'Load sample data', onclick: guard(async (ev) => { ev.target.disabled = true; const r = await ST.api('loadSampleData'); ST.toast(`Loaded ${r.added} sample entries`); await ST.refreshCore(); again(); }) }),
         h('button', { class: 'btn ghost', text: 'Remove sample data', onclick: guard(async () => { if (!confirm('Remove all sample entries? Your own entries are kept.')) return; const r = await ST.api('removeSampleData'); ST.toast(`Removed ${r.removed} sample entries`); again(); }) })),
       h('p', { class: 'muted', text: 'Database location can be changed with "dbPath" in config.json inside the data folder (restart required).' })));
@@ -112,6 +138,6 @@ ST.tabs.settings = {
     const aRows = audit.map((a) => h('tr', {}, h('td', { class: 'nowrap muted', text: ST.fmtDate(a.ts.slice(0, 16).replace(' ', 'T')) }), h('td', { text: a.user }), h('td', { text: a.action }), h('td', { class: 'muted', text: a.detail })));
     const auditCard = ST.card('Audit log', h('div', { class: 'tbl-wrap short' }, h('table', { class: 'data-t slim' }, h('thead', {}, h('tr', {}, ['When (UTC)', 'User', 'Action', 'Detail'].map((t) => h('th', { text: t })))), h('tbody', {}, aRows))), { class: 'span2' });
 
-    root.replaceChildren(h('div', { class: 'grid' }, featCard, appear, lineCard, dataCard, partsCard, backupCard, fieldsCard, auditCard));
+    root.replaceChildren(h('div', { class: 'grid' }, profCard, featCard, appear, names, lineCard, dataCard, partsCard, backupCard, fieldsCard, auditCard));
   },
 };

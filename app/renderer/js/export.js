@@ -11,9 +11,9 @@ ST.tabs.export = {
     const parts = allParts.filter((p) => String(p.line) === String(f.line)).map((p) => p.part_no);
     if (!parts.includes(f.part)) f.part = parts[0] || '';
 
-    const scope = ST.select([['all', 'All lines & parts'], ['part', 'One part']], f.scope);
+    const scope = ST.select([['all', `All ${ST.L.lines.toLowerCase()} & ${ST.L.parts.toLowerCase()}`], ['part', `One ${ST.L.partShort.toLowerCase()}`]], f.scope);
     scope.onchange = () => { f.scope = scope.value; this.render(root); };
-    const lineSel = ST.select(lines.map((l) => [String(l), `Line ${l}`]), f.line, { disabled: f.scope !== 'part' });
+    const lineSel = ST.select(lines.map((l) => [String(l), ST.lineName(l)]), f.line, { disabled: f.scope !== 'part' });
     lineSel.onchange = () => { f.line = lineSel.value; f.part = ''; this.render(root); };
     const partSel = ST.select(parts, f.part, { disabled: f.scope !== 'part' });
     partSel.onchange = () => { f.part = partSel.value; };
@@ -23,7 +23,7 @@ ST.tabs.export = {
     };
     const dataCard = ST.card('Data export', h('div', { class: 'form-grid' },
       h('label', { class: 'fld' }, h('span', { text: 'Scope' }), scope),
-      h('label', { class: 'fld' }, h('span', { text: 'Line' }), lineSel),
+      h('label', { class: 'fld' }, h('span', { text: ST.L.line }), lineSel),
       h('label', { class: 'fld' }, h('span', { text: 'Part' }), partSel),
       h('label', { class: 'fld' }, h('span', { text: 'From' }), h('input', { type: 'date', value: f.from, onchange: (e) => { f.from = e.target.value; } })),
       h('label', { class: 'fld' }, h('span', { text: 'To' }), h('input', { type: 'date', value: f.to, onchange: (e) => { f.to = e.target.value; } })),
@@ -33,7 +33,7 @@ ST.tabs.export = {
     const auto = h('label', { class: 'chk' }, h('input', { type: 'checkbox', checked: ST.state.settings.weekly_auto === '1', onchange: async (e) => { await ST.api('setSettings', { weekly_auto: e.target.checked ? '1' : '0' }); ST.state.settings.weekly_auto = e.target.checked ? '1' : '0'; ST.toast(e.target.checked ? 'A report is created on app start when a week has passed' : 'Auto weekly report off'); } }), ' Auto-create weekly (on app start, when 7 days have passed)');
     const end = h('input', { type: 'date', value: new Date().toLocaleDateString('en-CA') });
     const rep = ST.card('Weekly change report (PDF)', h('div', {},
-      h('p', { class: 'muted', text: 'Settings changed per line and part, change reasons, and open drift alerts for the 7 days ending on the chosen date.' }),
+      h('p', { class: 'muted', text: `Settings changed per ${ST.L.line.toLowerCase()} and ${ST.L.partShort.toLowerCase()}, change reasons, and open drift alerts for the 7 days ending on the chosen date.` }),
       h('div', { class: 'toolbar' }, h('label', { class: 'inl' }, 'Week ending ', end),
         h('button', { class: 'btn primary', text: 'Create report now', onclick: async (ev) => { ev.target.disabled = true; try { const r = await ST.main('report:create', end.value); ST.toast(`Report saved (${r.changes} changes)`); await ST.main('shell:showItem', r.file); } catch (e) { ST.fail(e); } ev.target.disabled = false; } })),
       auto,

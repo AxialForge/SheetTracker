@@ -185,6 +185,7 @@ class SetupService {
     }
     const ins = db.prepare('INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)');
     Object.entries(F.DEFAULT_SETTINGS).forEach(([k, v]) => ins.run(k, v));
+    if (this.blank) ins.run('blank_profile', '1'); // a job set up from a template: no press-setup fields to offer
   }
 
   // Type details of factory fields that are not number/text (rating scale, ...).
@@ -263,6 +264,14 @@ class SetupService {
   audit(action, detail = '', user) {
     this.db.prepare('INSERT INTO audit(ts,user,action,detail) VALUES(?,?,?,?)')
       .run(new Date(this.now()).toISOString(), user ?? this.getSettings().entered_by ?? '', action, detail);
+  }
+
+  // What this profile calls its two identifiers (Settings → Names).
+  _labels() {
+    const s = this.getSettings();
+    const line = C.norm(s.label_line) || 'Line';
+    const part = C.norm(s.label_part) || 'Part No.';
+    return { line, part, partShort: part.replace(/\s*(no\.?|number|#)$/i, '').trim() || part };
   }
 
   // ---------- settings ----------
@@ -511,7 +520,7 @@ class SetupService {
   }
   removeLine(line) {
     const used = this.db.prepare('SELECT COUNT(*) c FROM entries WHERE line=?').get(line).c;
-    if (used) throw new Error(`Line ${line} has ${used} entries and cannot be removed.`);
+    if (used) throw new Error(`${this._labels().line} ${line} has ${used} entries and cannot be removed.`);
     this.db.prepare('DELETE FROM line_forms WHERE line=?').run(line);
     this.audit('line-remove', String(line));
     return this.getLineForms();
@@ -622,9 +631,10 @@ class SetupService {
   saveEntry(e) {
     const line = parseInt(e.line, 10);
     let part = partNorm(e.part_no);
-    if (!line) throw new Error('Line # is required');
-    if (!part) throw new Error('Part No. is required');
-    if (!this.db.prepare('SELECT 1 FROM line_forms WHERE line=?').get(line)) throw new Error(`Line ${line} is not configured (Settings → Line → Form).`);
+    const L = this._labels();
+    if (!line) throw new Error(`${L.line} # is required`);
+    if (!part) throw new Error(`${L.part} is required`);
+    if (!this.db.prepare('SELECT 1 FROM line_forms WHERE line=?').get(line)) throw new Error(`${L.line} ${line} is not configured (Settings → ${L.line} → Form, or import a template with a Forms sheet).`);
     part = this._canonPart(line, part);
     const fields = this.getFields();
     const fieldMap = new Map(fields.map((f) => [f.key, f]));
@@ -933,7 +943,8 @@ class SetupService {
     const used = new Set();
     rows.forEach((e) => Object.keys(e.values).forEach((k) => used.add(k)));
     const cols = fields.filter((f) => used.has(f.key));
-    const headers = ['Line', 'Part No', 'Date/Time', 'Sheet Rev', 'Revised', 'HMI File', 'Entered By'];
+    const L = this._labels();
+    const headers = [L.line, L.part.replace(/\.$/, ''), 'Date/Time', 'Sheet Rev', 'Revised', 'HMI File', 'Entered By'];
     if (includeReason) headers.push('Reason');
     headers.push('Notes', 'Changed Fields');
     cols.forEach((f) => {
@@ -964,7 +975,7 @@ class SetupService {
       .sort((a, b) => a.line - b.line || (a.part_no < b.part_no ? -1 : 1) || (a.ts < b.ts ? -1 : 1));
     const reasons = {};
     entries.forEach((e) => { if (e.reason) reasons[e.reason] = (reasons[e.reason] || 0) + 1; });
-    return { start, end, entries: entries.length, changes, reasons, drift: this.driftAlerts(), lines: this.getLineForms().map((l) => ({
+    return { labels: this._labels(), start, end, entries: entries.length, changes, reasons, drift: this.driftAlerts(), lines: this.getLineForms().map((l) => ({
       line: l.line, entries: entries.filter((e) => e.line === l.line).length })) };
   }
 

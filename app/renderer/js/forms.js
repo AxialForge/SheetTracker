@@ -1,7 +1,7 @@
 'use strict';
 // Forms: add / renumber / delete forms and choose which fields each one carries.
 // Role "tracked" = changes day to day and is asked on every entry.
-// Role "set once" = fixed setup values, asked on the first entry for a Line + Part (and on demand after that).
+// Role "set once" = fixed setup values, asked on the first entry for a line + part (and on demand after that).
 ST.tabs.forms = {
   title: 'Forms',
   sel: null,
@@ -54,13 +54,13 @@ ST.tabs.forms = {
         h('p', { class: 'muted', text: file.split(/[\\/]/).pop() }),
         plan.errors.length ? h('div', {}, h('b', { text: `${plan.errors.length} problem${plan.errors.length === 1 ? '' : 's'} to fix in the file first` }), listOf('plan-err', plan.errors.slice(0, 40))) : null,
         !plan.errors.length ? h('div', { class: 'plan-sum' }, chip(sum.formsAdded, 'New forms'), chip(sum.sectionsAdded, 'New sections'), chip(sum.fieldsAdded, 'New fields'), chip(sum.fieldsChanged, 'Fields edited'),
-          chip(sum.fieldsOnForms, 'Added to forms'), chip(sum.roleChanges, 'Role changes'), chip(sum.removed, 'Removed from forms'), chip(sum.linesSet, 'Lines re-pointed')) : null,
+          chip(sum.fieldsOnForms, 'Added to forms'), chip(sum.roleChanges, 'Role changes'), chip(sum.removed, 'Removed from forms'), chip(sum.linesSet, `${ST.L.lines} re-pointed`)) : null,
         !plan.errors.length && !plan.changed ? h('p', { text: 'Nothing to change: this template matches what is already set up.' }) : null,
         plan.warnings.length ? h('div', {}, h('b', { text: 'Notes' }), listOf('plan-warn', plan.warnings.slice(0, 30))) : null,
         added.length ? h('div', {}, h('b', { text: 'New fields' }), listOf('', added.slice(0, 60).map((f) => `${f.label} — ${Types.label(f.attrs.kind).split(' (')[0]}${f.attrs.unit ? `, ${f.attrs.unit}` : ''}`))) : null,
         changed.length ? h('div', {}, h('b', { text: 'Edited fields' }), h('table', { class: 'plan-tbl' }, h('tbody', {}, changed.slice(0, 80).flatMap((f) => f.changes.map((c, i) => h('tr', {}, h('td', { text: i ? '' : f.label }), h('td', { class: 'muted', text: c.what }), h('td', { text: c.from || '—' }), h('td', { text: '→' }), h('td', { text: c.to || '—' }))))))) : null,
         members.length ? h('div', {}, h('b', { text: 'Form membership' }), listOf('', members.slice(0, 80).map((m) => `Form ${m.form_no}: ${m.label} — ${m.action === 'add' ? `add (${m.role === 'initial' ? 'set once' : 'tracked'})` : m.action === 'role' ? `now ${m.role === 'initial' ? 'set once' : 'tracked'}` : 'remove'}`))) : null,
-        plan.lines.length ? h('div', {}, h('b', { text: 'Lines' }), listOf('', plan.lines.map((l) => `Line ${l.line} → form ${l.form_no}${l.from ? ` (was ${l.from})` : ''}`))) : null,
+        plan.lines.length ? h('div', {}, h('b', { text: ST.L.lines }), listOf('', plan.lines.map((l) => `${ST.lineName(l.line)} → form ${l.form_no}${l.from ? ` (was ${l.from})` : ''}`))) : null,
         !plan.errors.length ? h('label', { class: 'chk' }, h('input', { type: 'checkbox', checked: opts.removeMissing, onchange: (e) => { opts.removeMissing = e.target.checked; close('again'); } }),
           ' Also take fields that are not in this template off the forms it lists (their stored values are kept)') : null);
       const go = await ST.modal({ title: 'Import template', wide: true, body,
@@ -86,7 +86,7 @@ ST.tabs.forms = {
     const items = forms.map((f) => h('button', { class: `form-item ${f.form_no === this.sel ? 'on' : ''}`, type: 'button', onclick: () => { this.sel = f.form_no; this.render(root); } },
       h('b', { class: 'mono', text: `Form ${f.form_no}` }),
       f.name ? h('span', { text: f.name }) : null,
-      h('small', { class: 'muted', text: `${f.lines.length ? `Line ${f.lines.join(', ')}` : 'no lines'} · ${f.tracked} tracked · ${f.initial} set once` })));
+      h('small', { class: 'muted', text: `${f.lines.length ? `${ST.L.line} ${f.lines.join(', ')}` : `no ${ST.L.lines.toLowerCase()}`} · ${f.tracked} tracked · ${f.initial} set once` })));
     const nf = { form_no: '', name: '', copyFrom: '' };
     const addForm = h('div', { class: 'col tight' },
       h('div', { class: 'toolbar' },
@@ -95,7 +95,8 @@ ST.tabs.forms = {
       h('div', { class: 'toolbar' },
         h('label', { class: 'inl' }, 'Start from ', ST.select([['', 'empty'], ...forms.map((f) => [String(f.form_no), `a copy of ${f.form_no}`])], '', { onchange: (e) => { nf.copyFrom = e.target.value; } })),
         h('button', { class: 'btn', text: 'Add form', onclick: guard(async () => { await ST.api('addForm', { form_no: nf.form_no, name: nf.name, copyFrom: nf.copyFrom || undefined }); this.sel = Number(nf.form_no); await again(); ST.toast('Form added'); }) })));
-    const mapped = (await ST.api('getSettings')).field_map === 'vf1';
+    const cfg = await ST.api('getSettings');
+    const mapped = cfg.field_map === 'vf1' || cfg.blank_profile === '1';
     const apply = mapped ? null : h('div', { class: 'setup-note' }, h('span', { text: 'This database still has the generic starter fields.' }),
       h('button', { class: 'btn sm', text: 'Apply sheet fields', title: 'Re-lay forms 10880 / 10899 / 10900 / 10903 with the real setup-sheet fields', onclick: guard(async () => { if (!confirm('Replace the field layout of forms 10880, 10899, 10900 and 10903 with the real sheet fields?\n\nStored entries are kept.')) return; await ST.api('applyFieldMap'); await again(); ST.toast('Sheet fields applied'); }) }));
     const listCard = h('div', { class: 'col' }, ST.card('Forms', h('div', { class: 'col tight' }, apply, h('div', { class: 'form-list' }, items.length ? items : h('p', { class: 'muted', text: 'No forms yet.' })), addForm)), this.excelCard(forms.find((f) => f.form_no === this.sel), again));
@@ -117,12 +118,12 @@ ST.tabs.forms = {
         h('label', { class: 'fld' }, h('span', { text: 'Name' }), h('input', { type: 'text', value: cur.name, placeholder: 'e.g. 4000T five-coil form', onchange: guard(async (e) => { await ST.api('updateForm', cur.form_no, { name: e.target.value }); await again(); ST.toast('Saved'); }) })),
         h('label', { class: 'fld grow' }, h('span', { text: 'Notes' }), h('input', { type: 'text', value: cur.notes, onchange: guard(async (e) => { await ST.api('updateForm', cur.form_no, { notes: e.target.value }); ST.toast('Saved'); }) }))),
       h('div', { class: 'toolbar' },
-        h('span', { class: 'muted', text: cur.lines.length ? `Used by line${cur.lines.length > 1 ? 's' : ''} ${cur.lines.join(', ')}` : 'Not used by any line' }),
+        h('span', { class: 'muted', text: cur.lines.length ? `Used by ${cur.lines.length > 1 ? ST.L.lines.toLowerCase() : ST.L.line.toLowerCase()} ${cur.lines.join(', ')}` : `Not used by any ${ST.L.line.toLowerCase()}` }),
         h('div', { class: 'grow' }),
         h('input', { type: 'number', min: 1, class: 'short', value: renum.v, 'aria-label': 'New form number', oninput: (e) => { renum.v = e.target.value; } }),
         h('button', { class: 'btn ghost sm', text: 'Change number', title: 'Renumber this form everywhere it is used', onclick: guard(async () => { await ST.api('renameForm', cur.form_no, renum.v); this.sel = Number(renum.v); await again(); ST.toast('Renumbered'); }) }),
         h('button', { class: 'btn ghost sm', text: 'Delete form', onclick: guard(async () => { if (!confirm(`Delete form ${cur.form_no}?\n\nStored entries are not affected.`)) return; await ST.api('deleteForm', cur.form_no); await again(); ST.toast('Form deleted'); }) })),
-      h('p', { class: 'muted', text: 'Lines are pointed at a form in Settings → Line → Form. Name, unit, type and section are shared by every form that uses a field; the role is per form.' })));
+      h('p', { class: 'muted', text: `${ST.L.lines} are pointed at a form in Settings → ${ST.L.line} → Form. Name, unit, type and section are shared by every form that uses a field; the role is per form.` })));
 
     const roleSel = (f) => ST.select([['tracked', 'Tracked'], ['initial', 'Set once']], f.role, { 'aria-label': `${f.label} role`, onchange: guard(async (e) => { await ST.api('setFormField', cur.form_no, f.key, e.target.value); await again(); }) });
     const patch = (f, p, msg = 'Saved') => guard(async () => { await ST.api('updateField', f.key, p); await ST.refreshCore(); ST.toast(msg); });
@@ -144,7 +145,7 @@ ST.tabs.forms = {
     const table = formFields.length
       ? h('div', { class: 'tbl-wrap' }, h('table', { class: 'data-t' }, h('thead', {}, h('tr', {}, ['Name', 'Section', 'Type', 'Kind', 'Unit', 'Role', 'Options / limits', ''].map((t) => h('th', { text: t })))), h('tbody', {}, rows)))
       : h('p', { class: 'muted', text: 'This form has no fields yet. Add some below.' });
-    const legend = h('p', { class: 'muted', text: 'Tracked: changes day to day, asked on every entry. Set once: fixed setup values, asked on the first entry for a Line + Part and available on later entries with “Show setup fields”.' });
+    const legend = h('p', { class: 'muted', text: 'Tracked: changes day to day, asked on every entry. Set once: fixed setup values, asked on the first entry for a line + part and available on later entries with “Show setup fields”.' });
     const fieldsCard = ST.card(`Fields on form ${cur.form_no} (${cur.tracked} tracked · ${cur.initial} set once)`, h('div', { class: 'col tight' }, legend, table));
 
     // add an existing field

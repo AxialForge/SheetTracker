@@ -208,6 +208,8 @@ function allDefaults() {
 }
 
 const DEFAULT_SETTINGS = {
+  label_line: 'Line',
+  label_part: 'Part No.',
   theme: 'crimson',
   date_format: 'iso',
   entered_by: '',

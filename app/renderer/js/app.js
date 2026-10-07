@@ -3,12 +3,26 @@
   const ORDER = ['dashboard', 'entry', 'data', 'export', 'forms', 'settings', 'about'];
   let current = null;
 
+  // Top-right: which profile (job) is open, and a quick way to change it when there is more than one.
+  function renderStatus() {
+    const box = document.getElementById('status');
+    const profs = ST.state.profiles || [];
+    const cur = profs.find((p) => p.id === ST.state.profileId);
+    document.getElementById('brand-sub').textContent = cur ? cur.name : '';
+    box.replaceChildren();
+    if (profs.length < 2) return;
+    const sel = ST.select(profs.map((p) => [p.id, p.name]), ST.state.profileId, { class: 'profile-sel', 'aria-label': 'Open profile', title: 'Switch profile (job)',
+      onchange: async (e) => { try { await ST.main('profile:switch', e.target.value); } catch (err) { ST.fail(err); e.target.value = ST.state.profileId; } } });
+    box.append(sel);
+  }
+
   ST.show = async function show(name) {
     current = name;
     const view = document.getElementById('view');
     document.querySelectorAll('#tabs button').forEach((b) => { const on = b.dataset.tab === name; b.classList.toggle('on', on); b.setAttribute('aria-selected', on); });
     try {
       await ST.refreshCore();
+      renderStatus();
       view.className = `view v-${name}`;
       view.scrollTop = 0;
       await ST.tabs[name].render(view);

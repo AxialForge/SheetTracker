@@ -8,7 +8,7 @@ Log checked-off press setup sheets and see what changed day to day, per **Line +
 
 Download `Setup Tracker-<version>-setup.exe` from [Releases](../../releases) and run it. The installer is unsigned, so Windows SmartScreen shows *More info → Run anyway* once.
 
-Data lives in `%USERPROFILE%\.setup_tracker\` (`setups.db`, `config.json`, `backups\`, `photos\`). Nothing leaves the PC.
+Data lives in `%USERPROFILE%\.setup_tracker\` (`setups.db`, `config.json`, `profiles.json`, `backups\`, `photos\`). Nothing leaves the PC.
 
 ## What it does
 
@@ -45,6 +45,12 @@ Number, Duration and Time of day can have a min / max: a value outside it is out
 ### Excel templates
 
 Forms → **Excel template** downloads a form (or all of them) as a workbook, one row per field: Section, Field, Type, Unit, Entry (Setting / Reading), Role (Tracked / Set once), Options, Min, Max, plus a Forms sheet (name, notes, lines). Edit or add rows in Excel (the Type, Entry and Role cells are dropdowns), then **Import template…**. A preview lists every new, edited and re-pointed item first; stored entries are never touched. Rows keep their hidden **Key** so a rename stays a rename; leave Key blank for new fields. Fields missing from the workbook are only taken off a form if you tick the option.
+
+### Profiles (other jobs)
+
+Settings → **Profiles** keeps one fully separate database per job: its own forms, fields, sections, entries, photos, backups, settings and audit log. **Create and open** starts either empty (then import an Excel template to define its forms) or with a copy of the current forms. Once there are two or more, a switcher appears top-right; switching reloads the window onto that database. The original data folder is the first profile, untouched; others live in `%USERPROFILE%\.setup_tracker\profiles\<name>\`. Removing a profile only takes it off the list, its files stay on disk.
+
+Settings → **Names** renames the two identifiers for the open profile (for example *Station* and *Product* instead of *Line* and *Part No.*). Everything on screen, in exports and in the weekly report follows. The first identifier must be a whole number; the second can be any text.
 
 `templates/` has ready-made files: `blank-form-template.xlsx` (instructions + headers) and `press-setup-forms.xlsx` (the four Viking Forge forms). Regenerate them with `npm run templates`.
 
