@@ -16,15 +16,13 @@ function rng(seed) {
 
 // key -> [setpoint, step] (step = size of a typical operator adjustment)
 const BASE = {
-  stroke_speed: [38, 1], shut_height: [14.25, 0.05], die_temp: [450, 10], ejector_stroke: [3.5, 0.1],
-  billet_temp: [2250, 10], heater_power: [310, 5], billet_length: [7.5, 0.05],
-  lube_spray_time: [1.2, 0.1], lube_pressure: [60, 2], blowoff_time: [0.8, 0.1],
-  coil1_amps: [820, 10], coil2_amps: [815, 10], coil3_amps: [810, 10], coil4_amps: [805, 10], coil5_amps: [800, 10],
-  robot_speed: [75, 5], robot_pickup_delay: [0.4, 0.05],
-  capacitance: [240, 5], run_line_speed: [32, 1], run_power: [410, 5], roller_hi_delay: [1.1, 0.1],
-  roller_low_delay: [0.7, 0.1], coil_exit_timer: [2.5, 0.1],
+  tonnage_s1: [1200, 25], tonnage_s2: [1400, 25], tonnage_s3: [1000, 25], num_coils: [2, 1],
+  billet_temp: [2250, 10], low_reject_temp: [2150, 10], hi_reject_temp: [2350, 10], scrap_temp: [2000, 10], cycle_time: [6.5, 0.1],
+  coil1_amps: [82, 1], coil2_amps: [81, 1], coil3_amps: [80, 1], coil4_amps: [79, 1], coil5_amps: [78, 1],
+  run_line_speed: [32, 1], run_power: [41, 1], lube_concentration: [6, 0.5], nitrogen: [1500, 25], shut_height: [14.25, 0.05],
+  z_offset: [0, 1],
 };
-const PARTS = { 1: ['5521-A', '5530-B'], 3: ['3310-K'], 4: ['4410-D'], 5: ['6120-C', '6144-F'], 7: ['7007-J'], 9: ['9190-M'], 11: ['11200-X'] };
+const PARTS = { 1: ['5521-A', '5530-B'], 2: ['2200-Y'], 3: ['3310-K'], 4: ['4410-D'], 5: ['6120-C', '6144-F'], 7: ['7007-J'], 9: ['9190-M'], 11: ['11200-X'] };
 const REASONS = ['Die change', 'Material', 'Quality', 'Maintenance'];
 
 function generate(svc, days = 42) {
@@ -36,7 +34,7 @@ function generate(svc, days = 42) {
   const rnd = (lo, hi) => lo + (hi - lo) * r();
   const round = (v, step) => { const d = String(step).split('.')[1]?.length || 0; return Number(v.toFixed(d + 1)); };
   const forms = new Map(svc.getLineForms().map((l) => [l.line, l.form_no]));
-  const drifters = new Set(['3|3310-K|lube_pressure', '5|6120-C|coil2_amps']);
+  const drifters = new Set(['3|3310-K|nitrogen', '5|6120-C|coil2_amps']);
   for (const [lineStr, parts] of Object.entries(PARTS)) {
     const line = Number(lineStr);
     if (!forms.has(line)) continue;

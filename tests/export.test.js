@@ -44,14 +44,14 @@ test('xlsx is a valid zip with the expected parts and typed cells', () => {
 
 test('exportRows: setpoint/actual columns, changed fields, reasons toggle, filters', () => {
   const { svc } = make();
-  entry(svc, '2026-03-10T08:00', { die_temp: { setpoint: '450', actual: '450' }, ptp_time: { actual: '6' } });
-  entry(svc, '2026-03-11T08:00', { die_temp: { setpoint: '450', actual: '470' } }, { reason: 'Die change' });
+  entry(svc, '2026-03-10T08:00', { nitrogen: { setpoint: '450', actual: '450' }, ptp_time: { actual: '6' } });
+  entry(svc, '2026-03-11T08:00', { nitrogen: { setpoint: '450', actual: '470' } }, { reason: 'Die change' });
   const all = svc.exportRows({});
   assert.ok(all.headers.includes('Reason'));
-  assert.ok(all.headers.includes('Die temp (°F) - Setpoint') && all.headers.includes('Die temp (°F) - Actual'));
+  assert.ok(all.headers.includes('Nitrogen - Setpoint') && all.headers.includes('Nitrogen - Actual'));
   assert.ok(all.headers.includes('Part-to-part time (s)'));
   const changedCol = all.headers.indexOf('Changed Fields');
-  assert.ok(all.rows.some((r) => r[changedCol] === 'Die temp'));
+  assert.ok(all.rows.some((r) => r[changedCol] === 'Nitrogen'));
   assert.ok(!svc.exportRows({ includeReason: false }).headers.includes('Reason'));
   assert.equal(svc.exportRows({ from: '2026-03-11' }).rows.length, 1);
   assert.equal(svc.exportRows({ line: 5, part: 'nope' }).rows.length, 0);
@@ -59,9 +59,9 @@ test('exportRows: setpoint/actual columns, changed fields, reasons toggle, filte
 
 test('weekly report data + html', () => {
   const { svc } = make();
-  entry(svc, '2026-03-10T08:00', { die_temp: { actual: '450' } });
-  entry(svc, '2026-03-16T08:00', { die_temp: { actual: '470' } }, { reason: 'Quality' });
-  entry(svc, '2026-03-01T08:00', { die_temp: { actual: '1' } }); // outside window
+  entry(svc, '2026-03-10T08:00', { nitrogen: { actual: '450' } });
+  entry(svc, '2026-03-16T08:00', { nitrogen: { actual: '470' } }, { reason: 'Quality' });
+  entry(svc, '2026-03-01T08:00', { nitrogen: { actual: '1' } }); // outside window
   const d = svc.weeklyReportData('2026-03-18');
   assert.equal(d.start, '2026-03-12');
   assert.equal(d.entries, 1);
@@ -69,6 +69,6 @@ test('weekly report data + html', () => {
   assert.deepEqual(d.reasons, { Quality: 1 });
   const html = reportHtml(d, { version: '0.1.0' });
   assert.match(html, /Weekly change report/);
-  assert.match(html, /Die temp/);
+  assert.match(html, /Nitrogen/);
   assert.match(html, /450/); assert.match(html, /470/);
 });

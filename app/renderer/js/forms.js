@@ -26,7 +26,10 @@ ST.tabs.forms = {
       h('div', { class: 'toolbar' },
         h('label', { class: 'inl' }, 'Start from ', ST.select([['', 'empty'], ...forms.map((f) => [String(f.form_no), `a copy of ${f.form_no}`])], '', { onchange: (e) => { nf.copyFrom = e.target.value; } })),
         h('button', { class: 'btn', text: 'Add form', onclick: guard(async () => { await ST.api('addForm', { form_no: nf.form_no, name: nf.name, copyFrom: nf.copyFrom || undefined }); this.sel = Number(nf.form_no); await again(); ST.toast('Form added'); }) })));
-    const listCard = ST.card('Forms', h('div', { class: 'col tight' }, h('div', { class: 'form-list' }, items.length ? items : h('p', { class: 'muted', text: 'No forms yet.' })), addForm));
+    const mapped = (await ST.api('getSettings')).field_map === 'vf1';
+    const apply = mapped ? null : h('div', { class: 'setup-note' }, h('span', { text: 'This database still has the generic starter fields.' }),
+      h('button', { class: 'btn sm', text: 'Apply sheet fields', title: 'Re-lay forms 10880 / 10899 / 10900 / 10903 with the real setup-sheet fields', onclick: guard(async () => { if (!confirm('Replace the field layout of forms 10880, 10899, 10900 and 10903 with the real sheet fields?\n\nStored entries are kept.')) return; await ST.api('applyFieldMap'); await again(); ST.toast('Sheet fields applied'); }) }));
+    const listCard = ST.card('Forms', h('div', { class: 'col tight' }, apply, h('div', { class: 'form-list' }, items.length ? items : h('p', { class: 'muted', text: 'No forms yet.' })), addForm));
 
     const cur = forms.find((f) => f.form_no === this.sel);
     if (!cur) { root.replaceChildren(h('div', { class: 'forms-layout' }, listCard, ST.card('', h('p', { class: 'muted pad', text: 'Add a form to start.' })))); return; }

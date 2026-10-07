@@ -110,7 +110,8 @@ class SetupService {
     const n = db.prepare('SELECT COUNT(*) c FROM fields').get().c;
     if (n === 0) {
       const ins = db.prepare('INSERT OR IGNORE INTO fields(key,label,section,kind,unit,visible,sort,custom,has_sp) VALUES(?,?,?,?,?,1,?,0,?)');
-      F.allDefaults().forEach((f, i) => ins.run(f[0], f[1], f[2], f[3], f[4], (i + 1) * 10, f[5]));
+      F.catalogDefaults().forEach((f, i) => ins.run(f[0], f[1], f[2], f[3], f[4], (i + 1) * 10, f[5]));
+      db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES(\'field_map\',?)').run(F.FIELD_MAP_ID);
     }
     if (db.prepare('SELECT COUNT(*) c FROM line_forms').get().c === 0) {
       const ins = db.prepare('INSERT INTO line_forms(line, form_no) VALUES(?,?)');
@@ -124,16 +125,54 @@ class SetupService {
   _seedForms() {
     if (this.db.prepare('SELECT COUNT(*) c FROM forms').get().c > 0) return;
     const nums = new Set(F.FORMS);
+    Object.values(F.DEFAULT_LINE_FORMS).forEach((n) => nums.add(n));
     this.db.prepare('SELECT DISTINCT form_no FROM line_forms').all().forEach((r) => nums.add(r.form_no));
     this._tx(() => [...nums].sort((a, b) => a - b).forEach((n) => this._createForm(n)));
   }
   // A form created without an explicit field list carries every field that is not specific to another form.
   _createForm(formNo, name = '') {
-    this.db.prepare('INSERT OR IGNORE INTO forms(form_no,name,notes) VALUES(?,?,\'\')').run(formNo, name);
+    const meta = this._mapped() ? F.FORM_META[formNo] : null;
+    this.db.prepare('INSERT OR IGNORE INTO forms(form_no,name,notes) VALUES(?,?,?)').run(formNo, name || meta?.name || '', meta?.notes || '');
+    if (this._mapped()) {
+      const layout = F.formLayout(formNo);
+      const ins2 = this.db.prepare('INSERT OR IGNORE INTO form_fields(form_no,key,role) VALUES(?,?,?)');
+      const have = new Set(this.getFields().map((f) => f.key));
+      if (layout) {
+        for (const l of layout) if (have.has(l.key)) ins2.run(formNo, l.key, l.role);
+        for (const f of this.getFields()) if (f.custom) ins2.run(formNo, f.key, 'tracked');
+      }
+      else { // unknown form number: the fields every real form shares, plus readings, tonnage grid and custom fields
+        const core = new Set([...F.TRACKED_ALL, ...F.READINGS.map((f) => f[0]), ...F.TONNAGE.map((f) => f[0])]);
+        for (const f of this.getFields()) if (f.custom || core.has(f.key)) ins2.run(formNo, f.key, 'tracked');
+      }
+      return;
+    }
     const specific = this._specific();
     const keys = F.formKeys(formNo);
     const ins = this.db.prepare('INSERT OR IGNORE INTO form_fields(form_no,key,role) VALUES(?,?,\'tracked\')');
     for (const f of this.getFields()) if (f.custom || !specific.has(f.key) || keys.has(f.key)) ins.run(formNo, f.key);
+  }
+  _mapped() { return this.db.prepare('SELECT value FROM settings WHERE key=\'field_map\'').get()?.value === F.FIELD_MAP_ID; }
+  // Switch an existing install to the real sheet fields: adds/updates the catalogue and re-lays the four known forms.
+  // Stored entry values are never touched; generic fields stay in the field list (unattached) so history still reads.
+  applyFieldMap() {
+    this._tx(() => {
+      const have = new Map(this.getFields().map((f) => [f.key, f]));
+      let sort = (this.db.prepare('SELECT MAX(sort) m FROM fields').get().m || 0);
+      const ins = this.db.prepare('INSERT INTO fields(key,label,section,kind,unit,visible,sort,custom,has_sp) VALUES(?,?,?,?,?,1,?,0,?)');
+      const upd = this.db.prepare('UPDATE fields SET label=?, section=?, kind=?, unit=?, has_sp=?, visible=1 WHERE key=?');
+      F.catalogDefaults().forEach((f, i) => { if (have.has(f[0])) upd.run(f[1], f[2], f[3], f[4], f[5], f[0]); else ins.run(f[0], f[1], f[2], f[3], f[4], (sort += 10), f[5]); });
+      this.db.prepare('INSERT OR REPLACE INTO settings(key,value) VALUES(\'field_map\',?)').run(F.FIELD_MAP_ID);
+      for (const n of Object.keys(F.TRACKED_BY_FORM).map(Number)) {
+        this.db.prepare('INSERT OR IGNORE INTO forms(form_no,name,notes) VALUES(?,?,?)').run(n, F.FORM_META[n].name, F.FORM_META[n].notes);
+        this.db.prepare('DELETE FROM form_fields WHERE form_no=?').run(n);
+        this._createForm(n);
+      }
+      for (const [l, fm] of Object.entries(F.DEFAULT_LINE_FORMS)) this.db.prepare('INSERT OR IGNORE INTO line_forms(line,form_no) VALUES(?,?)').run(Number(l), fm);
+      this.audit('apply-field-map', F.FIELD_MAP_ID);
+    });
+    this._cache = null;
+    return { forms: this.getForms(), fields: this.getFields() };
   }
   ensureForm(formNo) {
     formNo = parseInt(formNo, 10);
