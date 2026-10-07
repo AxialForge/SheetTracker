@@ -41,7 +41,7 @@
         }
       ],
       "icon": "build/icon.png",
-      "artifactName": "${productName}-${version}-setup.${ext}"
+      "artifactName": "Setup-Tracker-${version}-setup.${ext}"
     },
     "nsis": {
       "oneClick": false,

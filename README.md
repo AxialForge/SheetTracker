@@ -6,7 +6,7 @@ Log checked-off press setup sheets and see what changed day to day, per **Line +
 
 ## Install
 
-Download `Setup Tracker-<version>-setup.exe` from [Releases](../../releases) and run it. The installer is unsigned, so Windows SmartScreen shows *More info → Run anyway* once.
+Download `Setup-Tracker-<version>-setup.exe` from [Releases](../../releases) and run it. The installer is unsigned, so Windows SmartScreen shows *More info → Run anyway* once.
 
 Data lives in `%USERPROFILE%\.setup_tracker\` (`setups.db`, `config.json`, `profiles.json`, `backups\`, `photos\`). Nothing leaves the PC.
 
@@ -71,7 +71,7 @@ npm run templates       # regenerate templates/*.xlsx
 npm run dist            # Windows installer in dist/ (run on Windows; Linux needs wine)
 ```
 
-Set `SETUP_TRACKER_DATA_DIR` to run against a scratch data folder. Release: bump `version` in `package.json`, merge, then `git tag vX.Y.Z && git push origin vX.Y.Z` on `main`; CI builds and attaches the installer, `latest.yml` and the `.blockmap`. The in-app updater reads `latest.yml`, so every release must carry all three, and its version must be higher than the one installed.
+Set `SETUP_TRACKER_DATA_DIR` to run against a scratch data folder. Release: bump `version` in `package.json`, merge, then `git tag vX.Y.Z && git push origin vX.Y.Z` on `main`; CI builds and attaches `Setup-Tracker-X.Y.Z-setup.exe`, `latest.yml` and the `.blockmap`. The in-app updater reads `latest.yml`, so every release must carry all three, and its version must be higher than the one installed.
 
 ## Known gaps
 

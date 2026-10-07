@@ -15,4 +15,4 @@
 - **Imports never touch stored entries.** Anything that changes forms or fields (template import) shows a plan first and backs up before applying.
 - **Schema changes**: bump `SCHEMA_VERSION`, add a step in `migrate()`, add a migration test. The app backs up before migrating.
 - **Before pushing**: `npm test` and `npm run screenshots` must pass.
-- **Releases**: bump `version` in `package.json`, then `git tag vX.Y.Z && git push origin vX.Y.Z`. CI builds `Setup Tracker-X.Y.Z-setup.exe`, `latest.yml` and the `.blockmap`.
+- **Releases**: bump `version` in `package.json`, then `git tag vX.Y.Z && git push origin vX.Y.Z`. CI builds `Setup-Tracker-X.Y.Z-setup.exe` (no spaces: the updater requests the name with spaces turned into dashes, and GitHub would store a spaced name with dots), `latest.yml` and the `.blockmap`.

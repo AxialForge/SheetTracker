@@ -25,7 +25,11 @@ jobs:
           grep -q "owner: AxialForge" dist/win-unpacked/resources/app-update.yml
           grep -q "repo: SheetTracker" dist/win-unpacked/resources/app-update.yml
           test -f dist/latest.yml
-          grep -q "^version: $(node -p "require('./package.json').version")$" dist/latest.yml
+          V=$(node -p "require('./package.json').version")
+          grep -q "^version: $V$" dist/latest.yml
+          # the updater asks GitHub for exactly this file name (spaces would be rewritten and 404)
+          test -f "dist/Setup-Tracker-$V-setup.exe"
+          grep -q "path: Setup-Tracker-$V-setup.exe" dist/latest.yml
           ls dist/*.blockmap
       - uses: softprops/action-gh-release@v2
         with:
