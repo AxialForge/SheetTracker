@@ -9,6 +9,7 @@ const C = require('../shared/compare');
 const T = require('../shared/types');
 const F = require('./fields');
 const Tpl = require('./template');
+const Hist = require('./history');
 
 const SCHEMA_VERSION = 6;
 const ROLES = ['tracked', 'initial']; // tracked = changes day to day; initial = set once when a Line+Part is first entered
@@ -1105,6 +1106,23 @@ class SetupService {
     this.backupNow('pre-template', true);
     Tpl.applyPlan(this, plan);
     return { applied: true, summary: plan.summary };
+  }
+
+  // ---------- history from Excel (old setup sheets) ----------
+  exportHistoryTemplate(opts = {}) { return Hist.buildHistoryTemplate(this, opts); }
+  previewHistory(file, opts = {}) {
+    if (!fs.existsSync(file)) throw new Error('File not found');
+    const plan = Hist.planHistory(this, fs.readFileSync(file), opts);
+    delete plan.entries; // the preview is a summary; apply re-reads the file
+    return plan;
+  }
+  applyHistory(file, opts = {}) {
+    if (!fs.existsSync(file)) throw new Error('File not found');
+    const plan = Hist.planHistory(this, fs.readFileSync(file), opts);
+    if (!plan.canApply) throw new Error(plan.entries.length ? `${plan.skipped.length} row${plan.skipped.length === 1 ? ' has' : 's have'} problems. Fix them, or choose to skip those rows.` : 'There is nothing to import.');
+    this.backupNow('pre-history', true);
+    Hist.applyHistory(this, plan);
+    return { added: plan.entries.length, skipped: plan.skipped.length, newParts: plan.summary.newParts.length };
   }
 
   // ---------- sample data ----------

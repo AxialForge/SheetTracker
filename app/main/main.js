@@ -15,7 +15,7 @@ const API = new Set([
   'getLineForms', 'setLineForm', 'removeLine', 'formFor', 'listParts', 'allParts', 'listPartsDetailed', 'checkPart', 'renamePart',
   'valueSuggestions', 'saveEntry', 'voidEntry', 'restoreEntry', 'updateNotes',
   'latestValues', 'lastHeader', 'listEntries', 'getEntry', 'dashboard', 'trend', 'compareTrend', 'driftAlerts',
-  'addSection', 'renameSection', 'deleteSection', 'previewTemplate', 'applyTemplate',
+  'addSection', 'renameSection', 'deleteSection', 'previewTemplate', 'applyTemplate', 'previewHistory', 'applyHistory',
   'ackDrift', 'listBackups', 'integrityCheck', 'backupNow', 'getAudit', 'loadSampleData', 'removeSampleData',
 ]);
 
@@ -161,6 +161,18 @@ function register() {
     fs.writeFileSync(r.filePath, bytes);
     svc.audit('template-export', r.filePath);
     return { file: r.filePath };
+  });
+  h('history:export', async ({ form }) => {
+    const bytes = svc.exportHistoryTemplate({ form });
+    const r = await dialog.showSaveDialog(win, { title: 'Save history template', defaultPath: `setup-tracker-history-form-${form}.xlsx`, filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
+    if (r.canceled) return null;
+    fs.writeFileSync(r.filePath, bytes);
+    svc.audit('history-template-export', r.filePath);
+    return { file: r.filePath };
+  });
+  h('history:pick', async () => {
+    const r = await dialog.showOpenDialog(win, { title: 'Import entries from Excel', properties: ['openFile'], filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
+    return r.canceled ? null : r.filePaths[0];
   });
   h('template:pick', async () => {
     const r = await dialog.showOpenDialog(win, { title: 'Import form template', properties: ['openFile'], filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });

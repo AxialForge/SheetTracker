@@ -19,11 +19,11 @@ const THEMES = ['crimson', 'amber', 'steel'];
 app.whenReady().then(async () => {
   // Reuse the real main process wiring (IPC handlers, service) but drive our own window.
   const { SetupService } = require('../app/main/service');
+  const { readXlsx, toXlsxBook } = require('../app/main/export');
   const svc = new SetupService({ dataDir });
   svc.setSettings({ opt_missing: '1', weekly_auto: '0', report_dir: path.join(dataDir, 'reports') });
   svc.loadSampleData();
   // an edited Excel template for the import flow below: one rename, one role change, new fields, and a second job's form
-  const { readXlsx, toXlsxBook } = require('../app/main/export');
   const hdr = ['Form', 'Section', 'Field', 'Type', 'Unit', 'Entry', 'Role', 'Options', 'Min', 'Max', 'Key'];
   const rows = readXlsx(svc.exportTemplate({ forms: [10899] })).find((x) => x.name === 'Fields').rows.slice(1).map((r) => {
     if (r[10] === 'billet_temp') r[2] = 'Billet temperature (smoke)';
@@ -34,6 +34,16 @@ app.whenReady().then(async () => {
     [200, 'Second job', 'Thing', 'Choice', '', 'Setting', 'Tracked', 'x; y', '', '', '']);
   const tpl = path.join(dataDir, 'edited-template.xlsx');
   fs.writeFileSync(tpl, toXlsxBook([{ name: 'Fields', headers: hdr, rows }, { name: 'Forms', headers: ['Form', 'Name', 'Notes', 'Lines'], rows: [[200, 'Second job', '', '12']] }]));
+  // a filled-in history template for the import flow below (one row has a bad value on purpose)
+  const hsheets = readXlsx(svc.exportHistoryTemplate({ form: 10899 }));
+  const hhead = hsheets.find((x) => x.name === 'Entries').rows[0];
+  const hrow = (o) => hhead.map((c) => (c in o ? o[c] : ''));
+  const hfile = path.join(dataDir, 'history.xlsx');
+  fs.writeFileSync(hfile, toXlsxBook([{ name: 'Entries', headers: hhead, rows: [
+    hrow({ Line: '5', 'Part No.': 'HIST-1', 'Date/Time': '2026-01-05 07:00', 'Source file': 'HIST-1_0105.pdf', 'Billet temperature (°F) - Setpoint': '2300' }),
+    hrow({ Line: '5', 'Part No.': 'HIST-1', 'Date/Time': '2026-01-06 07:00', 'Billet temperature (°F) - Setpoint': '2300', 'Billet temperature (°F) - Actual': '2310', Review: 'hard to read' }),
+    hrow({ Line: '5', 'Part No.': 'HIST-1', 'Date/Time': '2026-01-07 07:00', 'Billet temperature (°F) - Setpoint': '2300', 'Billet temperature (°F) - Actual': 'hot' }),
+  ] }, { name: 'Columns', headers: ['Header', 'Field key', 'Value'], rows: hsheets.find((x) => x.name === 'Columns').rows.slice(1) }]));
   svc.close();
   require('../app/main/main.js');
   await new Promise((r) => setTimeout(r, 800));
@@ -63,13 +73,33 @@ app.whenReady().then(async () => {
   const csv = await run(`ST.main('report:create', new Date().toLocaleDateString('en-CA'))`);
   const pdfOk = fs.existsSync(csv.file) && fs.statSync(csv.file).size > 1000;
   console.log('saved', JSON.stringify(saved), 'pdf', csv.file, pdfOk);
+  // the first entry for a new part asks only for setpoints; the next one asks for actuals
+  const setup = await run(`(async () => {
+    const E = ST.tabs.entry; const out = {};
+    E.S = null; await ST.show('entry'); await E.setLinePart('5', 'setup-flow-1');
+    out.banner = document.body.innerText.includes('enter the sheet setpoints only');
+    out.noActuals = !document.querySelector('[data-which="actual"]') && document.querySelectorAll('.readings, .tonnage-card').length === 0;
+    out.hasSetpoints = !!document.querySelector('[data-which="setpoint"]');
+    E.S.newPartOk = E.S.line + '|' + E.S.part;
+    E.val('billet_temp').setpoint = '2300'; E.val('billet_temp').actual = '9999'; E.val('heat_no').actual = 'X1'; // strays must not be saved
+    await E.save();
+    const row = (await ST.api('listEntries', { part: 'setup-flow-1' })).rows[0];
+    out.savedSetpointsOnly = !!row && row.values.billet_temp.setpoint === '2300' && !row.values.billet_temp.actual && !row.values.heat_no;
+    await E.setLinePart('5', 'setup-flow-1');
+    out.nextAsksActual = !!document.querySelector('[data-key="billet_temp"][data-which="actual"]') && !document.body.innerText.includes('enter the sheet setpoints only');
+    out.sheetValueHint = document.querySelector('[data-key="billet_temp"][data-which="actual"]').placeholder === '2300';
+    await E.setLinePart('5', 'setup-flow-2'); E.S.actualsNow = true; E.draw();
+    out.alsoActuals = !!document.querySelector('[data-key="billet_temp"][data-which="actual"]');
+    return out;
+  })()`);
+  console.log('setup-first', JSON.stringify(setup));
   // v0.2.0 flows through the real renderer: new-part confirmation, correct, void
   const flow = await run(`(async () => {
     const E = ST.tabs.entry; const out = {};
     E.S = null; await ST.show('entry');
     await E.setLinePart('5', 'smoke-new-1');
     out.banner = !!document.getElementById('newpart-note');
-    E.val('nitrogen').actual = '450';
+    E.val('nitrogen').setpoint = '450'; // a new part's first entry is its sheet: setpoints only
     await E.save();
     out.blockedUntilConfirmed = (await ST.api('listEntries', { part: 'smoke-new-1' })).total === 0;
     E.S.newPartOk = E.S.line + '|' + E.S.part;
@@ -178,6 +208,22 @@ app.whenReady().then(async () => {
   await push({ state: 'none', checkedAt: Date.now() });
   upd.upToDate = await run(`document.getElementById('update-card').innerText.includes('up to date')`);
   console.log('updater', JSON.stringify(upd));
+  // old setup sheets in from Excel: preview with a bad row, skip it, import the rest
+  await run(`ST.main = ((orig) => (name, ...a) => (name === 'history:pick' ? Promise.resolve(${JSON.stringify(hfile)}) : orig(name, ...a)))(ST.main); ST.show('export').then(() => { window.__hist = ST.importHistory(async () => {}); }); 0`);
+  await sleep(1000);
+  const histModal = await run(`(() => { const t = document.querySelector('.modal')?.innerText || ''; return { shown: t.includes('Entries to add') && t.includes('Row 4') && t.includes('not a number'), cannotApplyYet: !!document.querySelector('.modal .btn.primary') && document.querySelector('.modal .btn.primary').textContent === 'Close' }; })()`);
+  await run(`document.querySelector('.modal input[type=checkbox]').click(); 0`);
+  await sleep(700);
+  histModal.canSkip = await run(`document.querySelector('.modal .btn.primary').textContent.startsWith('Import 2 entries')`);
+  await shot('crimson-history-import');
+  await run(`document.querySelector('.modal .btn.primary').click(); 0`);
+  await run(`window.__hist.then(() => true)`);
+  const histDone = await run(`(async () => {
+    const rows = (await ST.api('listEntries', { part: 'HIST-1' })).rows.slice().reverse();
+    return rows.length === 2 && rows[0].values.billet_temp.setpoint === '2300' && !rows[0].values.billet_temp.actual && /Source: HIST-1_0105.pdf/.test(rows[0].notes) && rows[1].values.billet_temp.actual === '2310' && /NEEDS REVIEW: hard to read/.test(rows[1].notes);
+  })()`);
+  console.log('history', JSON.stringify({ ...histModal, imported: histDone }));
+  const histOk = Object.values(histModal).every(Boolean) && histDone;
   // Profiles: a second, separate database; the window reloads onto it
   const reloaded = () => new Promise((r) => win.webContents.once('did-finish-load', r));
   let wait = reloaded();
@@ -222,7 +268,7 @@ app.whenReady().then(async () => {
   })()`);
   console.log('profiles', JSON.stringify({ ...second, ...second2, ...back }));
   const profilesOk = [second, second2, back].every((o) => Object.values(o).every(Boolean));
-  const typesOk = profilesOk && Object.values(creator).every(Boolean) && Object.values(upd).every(Boolean) && Object.values(types).every(Boolean) && modalShown && Object.values(imported).every(Boolean);
+  const typesOk = profilesOk && histOk && Object.values(setup).every(Boolean) && Object.values(creator).every(Boolean) && Object.values(upd).every(Boolean) && Object.values(types).every(Boolean) && modalShown && Object.values(imported).every(Boolean);
   const bad = errors.length || !pdfOk || !flowOk || !typesOk;
   if (errors.length) console.error('Renderer errors:\n' + errors.join('\n'));
   console.log(bad ? 'SMOKE FAILED' : `SMOKE OK (${THEMES.length * TABS.length} screenshots in docs/screenshots)`);

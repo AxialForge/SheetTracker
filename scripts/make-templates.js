@@ -17,5 +17,9 @@ fs.mkdirSync(out, { recursive: true });
 fs.writeFileSync(path.join(out, 'blank-form-template.xlsx'), svc.exportTemplate({ blank: true }));
 fs.writeFileSync(path.join(out, 'press-setup-forms.xlsx'), svc.exportTemplate({ forms: 'all' }));
 fs.writeFileSync(path.join(out, 'form-10899-2500T-setup-sheet.xlsx'), sheet10899(svc));
+// one blank history template per form: the sheet to fill in from old PDFs, then Export → Import entries from Excel
+const hdir = path.join(out, 'history');
+fs.mkdirSync(hdir, { recursive: true });
+for (const f of svc.getForms()) fs.writeFileSync(path.join(hdir, `history-template-form-${f.form_no}.xlsx`), svc.exportHistoryTemplate({ form: f.form_no }));
 svc.close();
-console.log('wrote', fs.readdirSync(out).join(', '));
+console.log('wrote', fs.readdirSync(out).join(', '), '+ history/', fs.readdirSync(hdir).join(', '));

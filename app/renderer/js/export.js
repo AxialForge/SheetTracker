@@ -41,7 +41,49 @@ ST.tabs.export = {
         h('button', { class: 'btn ghost sm', text: 'Change…', onclick: async () => { try { if (await ST.main('dir:chooseReport')) this.render(root); } catch (e) { ST.fail(e); } } }),
         h('button', { class: 'btn ghost sm', text: 'Open', onclick: () => ST.main('shell:openFolder', reportDir).catch(ST.fail) }))));
 
+    // ---- old setup sheets in: a template per form to fill in, and the import
+    const formsList = ST.state.forms;
+    const hist = { form: String(formsList[0]?.form_no ?? '') };
+    const formSel = ST.select(formsList.map((x) => [String(x.form_no), `Form ${x.form_no}${x.name ? ` — ${x.name}` : ''}`]), hist.form, { 'aria-label': 'Form', onchange: (e) => { hist.form = e.target.value; } });
+    const histCard = ST.card('Load old setup sheets from Excel', h('div', { class: 'col tight' },
+      h('p', { class: 'muted', text: `One row per setup sheet: the ${ST.L.line.toLowerCase()}, ${ST.L.part.toLowerCase()}, date/time and each field's setpoint and actual. Download the template for a form, fill it from the sheets, then import it. You get a preview, with every problem listed by row, before anything is saved. Stored entries are never changed.` }),
+      h('div', { class: 'toolbar' }, formSel,
+        h('button', { class: 'btn', text: 'Download history template', onclick: async () => { try { if (!hist.form) throw new Error('Add a form first (Forms tab).'); const r = await ST.main('history:export', { form: Number(hist.form) }); if (r) { ST.toast('Template saved'); await ST.main('shell:showItem', r.file); } } catch (e) { ST.fail(e); } } })),
+      h('div', { class: 'toolbar' }, h('button', { class: 'btn primary', text: 'Import entries from Excel…', onclick: () => ST.importHistory().catch(ST.fail) }),
+        h('span', { class: 'muted', text: 'Also accepts this app\'s own Excel data export.' }))));
     const charts = ST.card('Charts', h('p', { class: 'muted', text: 'Every chart on the Dashboard has a “Save PNG” button.' }));
-    root.replaceChildren(h('div', { class: 'grid' }, dataCard, rep, charts));
+    root.replaceChildren(h('div', { class: 'grid' }, dataCard, rep, histCard, charts));
   },
+};
+
+// Import entries from an Excel file: preview (with every problem by row), then apply.
+ST.importHistory = async function importHistory(afterApply) {
+  const { h } = ST;
+  const file = await ST.main('history:pick');
+  if (!file) return;
+  const opts = { skipBad: false };
+  for (;;) {
+    const plan = await ST.api('previewHistory', file, opts);
+    const sum = plan.summary;
+    const chip = (n, text, warn) => h('span', { class: n ? (warn ? 'warn' : 'on') : '', text: `${text}: ${n}` });
+    const list = (cls, items) => (items.length ? h('ul', { class: `plan-list ${cls}` }, items.map((t) => h('li', { text: t }))) : null);
+    const body = (close) => h('div', { class: 'col tight' },
+      h('p', { class: 'muted', text: file.split(/[\\/]/).pop() }),
+      h('div', { class: 'plan-sum' }, chip(sum.toAdd, 'Entries to add'), chip(sum.newParts.length, `New ${ST.L.parts.toLowerCase()}`), chip(sum.duplicates, 'Already there'), chip(sum.skipped, 'Rows with problems', true), chip(sum.values, 'Values')),
+      sum.toAdd ? h('p', { class: 'muted', text: `${ST.fmtDate(sum.first)} to ${ST.fmtDate(sum.last)}` }) : null,
+      plan.errors.length ? h('div', {}, h('b', { text: plan.skipped.length ? `${plan.skipped.length} row${plan.skipped.length === 1 ? '' : 's'} with problems` : 'Fix these in the file' }), list('plan-err', plan.errors.slice(0, 60))) : null,
+      plan.warnings.length ? h('div', {}, h('b', { text: 'Notes' }), list('plan-warn', plan.warnings.slice(0, 30))) : null,
+      sum.newParts.length ? h('div', {}, h('b', { text: `New ${ST.L.parts.toLowerCase()}` }), h('p', { class: 'muted', text: sum.newParts.slice(0, 40).map((p) => `${ST.lineName(p.line)} · ${p.part}`).join('   ') + (sum.newParts.length > 40 ? ` …and ${sum.newParts.length - 40} more` : '') })) : null,
+      plan.skipped.length ? h('label', { class: 'chk' }, h('input', { type: 'checkbox', checked: opts.skipBad, onchange: (e) => { opts.skipBad = e.target.checked; close('again'); } }), ' Import the good rows and skip the ones with problems') : null);
+    const go = await ST.modal({ title: 'Import entries from Excel', wide: true, body,
+      buttons: plan.canApply ? [{ text: 'Cancel', value: null }, { text: `Import ${sum.toAdd} entr${sum.toAdd === 1 ? 'y' : 'ies'}`, primary: true, value: 'apply' }] : [{ text: 'Close', primary: true, value: null }] });
+    if (go === 'again') continue;
+    if (go === 'apply') {
+      const res = await ST.api('applyHistory', file, opts);
+      ST.toast(`Imported ${res.added} entr${res.added === 1 ? 'y' : 'ies'}${res.skipped ? `, skipped ${res.skipped}` : ''}`);
+      await ST.refreshCore();
+      if (afterApply) await afterApply();
+    }
+    return;
+  }
 };

@@ -15,7 +15,7 @@ Data lives in `%USERPROFILE%\.setup_tracker\` (`setups.db`, `config.json`, `prof
 | Tab | |
 |---|---|
 | **Dashboard** | KPIs, trend chart (actual vs sheet setpoint, optional compare-lines), most-changed settings, drift alerts, recent changes, line status today |
-| **Data Entry** | Blank fill-in form per line's sheet form. Gray placeholders and a *Last* column show previous values; changed cells go yellow, actual ≠ setpoint orange. *Fill blanks with last values*, *Clear*, `Ctrl+S` |
+| **Data Entry** | Blank fill-in form per line's sheet form. Gray placeholders and a *Last* column show previous values; changed cells go yellow, actual ≠ setpoint orange. *Fill blanks with last values*, *Clear*, `Ctrl+S`. **A new part's first entry is its sheet: setpoints only** (no actuals or readings; “Also enter actual values now” overrides). From the next entry on, actuals are asked, with the sheet value as the gray hint |
 | **Data** | Filterable table sorted by line. Editable notes, reasons, photos. *Revise* (a new entry), *Correct* (replaces a wrong entry), *Void* (takes it out of change detection, with a reason; *Show voided* lists them) |
 | **Export** | CSV / XLSX (one part or all, date range, reasons) and the weekly change report (PDF, optional auto-create on app start) |
 | **Forms** | Add, renumber, copy and delete forms; choose which fields each form carries and whether each is *Tracked* (asked every entry) or *Set once* (asked on the first entry for a Line + Part); add, edit or remove fields; download a form as an Excel template and import an edited one back |
@@ -41,6 +41,10 @@ Every field has a type that decides its entry box, what is accepted, how "change
 | Date | date picker | `2026-03-09`, `3/9/2026` | – |
 
 Number, Duration and Time of day can have a min / max: a value outside it is outlined, never blocked. A value that does not fit its type is refused on save with the field named.
+
+### Loading old setup sheets (history)
+
+Export → **Load old setup sheets from Excel** (also Settings → Data). Download a **history template** for a form: one row per setup sheet, with Line, Part No., Date/Time, entered-by / rev / HMI, reason, notes, a *Source file* column (the PDF a row came from, kept in the entry's notes) and a *Review* column (a hard-to-read handwritten value, kept as “NEEDS REVIEW”), then a setpoint and an actual column for every field on the form (readings have one). Fill it from the PDFs and **Import entries from Excel…**. The preview lists every problem by row (unknown line, bad date, a value that does not fit its type, two rows with the same line / part / time), warns about part numbers that look like typos of each other or of stored parts, skips rows that already exist, and can import the good rows while skipping the bad ones. Stored entries are never changed; a backup is taken first. Imported entries are a normal history: changes and drift are worked out from them. The app's own Excel data export can be imported the same way. Ready-made blanks for the four press forms are in `templates/history/`.
 
 ### Excel templates
 

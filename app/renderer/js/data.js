@@ -55,7 +55,8 @@ ST.tabs.data = {
         ];
       const tr = h('tr', { 'data-id': e.id, class: [this.focus === e.id ? 'flash' : '', voided ? 'voided' : ''].filter(Boolean).join(' ') },
         h('td', { class: 'sticky s0 mono', text: e.line }), h('td', { class: 'sticky s1', text: e.part_no }),
-        h('td', { class: 'nowrap', text: ST.fmtDate(e.entry_ts) }, nChg ? h('span', { class: 'pill', text: `${nChg} Δ` }) : null),
+        h('td', { class: 'nowrap', text: ST.fmtDate(e.entry_ts) }, nChg ? h('span', { class: 'pill', text: `${nChg} Δ` }) : null,
+          Object.keys(e.values).length && Object.values(e.values).every((v) => Compare.blank(v.actual)) ? h('span', { class: 'pill soft', title: 'The sheet only: setpoints, no actual values', text: 'setpoints' }) : null),
         h('td', { text: e.sheet_rev }),
         notesCell,
         showReason ? h('td', { text: e.reason || '' }) : null,

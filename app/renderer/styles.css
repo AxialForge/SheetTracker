@@ -105,6 +105,7 @@ table.data-t { width: 100%; font-size: 12px; } .data-t th { position: sticky; to
 .data-t .notes-col { min-width: 220px; } input[type=text].notes-in { width: 100%; background: transparent; border-color: transparent; }
 input[type=text].notes-in:hover, input[type=text].notes-in:focus { border-color: var(--border); background: var(--bg); }
 table.slim td { padding: 3px 8px; } .pill { margin-left: 6px; background: var(--changed); color: var(--changed-ink); border-radius: 9px; padding: 0 6px; font-size: 11px; }
+.pill.soft { background: transparent; border: 1px solid var(--border); color: var(--muted); }
 tr.flash td { animation: flash 2.4s ease-out; } @keyframes flash { from { background: var(--accent); } to { background: transparent; } }
 .legend { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); } .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; margin-left: 8px; } .sw.changed { background: var(--changed); } .sw.drift { background: var(--drift); }
 .dim { opacity: .55; }
@@ -135,7 +136,7 @@ tr.voided .void-why { color: var(--drift-ink); font-size: 12px; }
 .modal { width: min(460px, 92vw); display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; box-shadow: 0 12px 40px #000c; }
 .modal.wide { width: min(860px, 94vw); max-height: 88vh; } .modal-body { overflow: auto; display: flex; flex-direction: column; gap: 10px; }
 .plan-sum { display: flex; flex-wrap: wrap; gap: 8px; } .plan-sum span { border: 1px solid var(--border); border-radius: 12px; padding: 1px 10px; }
-.plan-sum span.on { border-color: var(--ok); color: var(--ok); } .plan-list { margin: 0; padding-left: 18px; } .plan-list li { margin: 2px 0; }
+.plan-sum span.on { border-color: var(--ok); color: var(--ok); } .plan-sum span.warn { border-color: var(--warn); color: var(--warn); } .plan-list { margin: 0; padding-left: 18px; } .plan-list li { margin: 2px 0; }
 .plan-err li { color: var(--drift-ink); } .plan-warn li { color: var(--warn); } .plan-tbl { width: 100%; font-size: 12px; } .plan-tbl td, .plan-tbl th { padding: 2px 8px; text-align: left; border-bottom: 1px solid var(--border); }
 .modal .toolbar.end { justify-content: flex-end; } .modal input.bad { border-color: var(--accent); }
 .pick-list { min-width: 170px; }

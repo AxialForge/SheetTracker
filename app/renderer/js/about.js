@@ -39,6 +39,7 @@ ST.tabs.about = {
       ['Done', 'Field types (number, text, choice, yes/no, rating, ratio, time of day, duration, date) with limits; Excel form templates (download, edit, import with preview)'],
       ['Done', 'Profiles: a separate database per job, with its own names for the two identifiers'],
       ['Done', 'In-app updates from GitHub Releases (download and restart, with a backup first)'],
+      ['Done', 'First entry for a new part asks for setpoints only; load old setup sheets from Excel (history template, preview, skip bad rows)'],
       ['Not yet', 'Sheet revision tracking'],
       ['Deferred', 'OCR / photo extraction of sheets'],
       ['Deferred', 'Network-folder database and multi-user'],

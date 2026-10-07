@@ -129,6 +129,7 @@ ST.tabs.settings = {
       h('div', { class: 'kv' }, h('span', { class: 'muted', text: 'Photos' }), h('code', { class: 'path', text: paths.photosDir })),
       h('div', { class: 'toolbar' },
         h('button', { class: 'btn', text: 'Open data folder', onclick: guard(() => ST.main('shell:openFolder', paths.dataDir)) }),
+        h('button', { class: 'btn', text: 'Import entries from Excel…', title: 'Old setup sheets, filled into a history template (Export tab)', onclick: guard(() => ST.importHistory(again)) }),
         h('button', { class: 'btn', text: 'Import a v3 database…', onclick: guard(async () => { const r = await ST.main('db:import'); if (r) { ST.toast(`Imported ${r.added} entries (${r.skipped} duplicates skipped)`); await ST.refreshCore(); again(); } }) })),
       s.blank_profile === '1' ? null : h('div', { class: 'toolbar' },
         h('button', { class: 'btn ghost', text: 'Load sample data', onclick: guard(async (ev) => { ev.target.disabled = true; const r = await ST.api('loadSampleData'); ST.toast(`Loaded ${r.added} sample entries`); await ST.refreshCore(); again(); }) }),
