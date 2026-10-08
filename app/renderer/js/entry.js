@@ -15,7 +15,7 @@ ST.tabs.entry = {
       line: keep.line ?? '', part: keep.part ?? '', ts: ST.nowLocal(),
       header: { sheet_rev: keep.sheet_rev ?? last.sheet_rev ?? '', sheet_revised: keep.sheet_revised ?? last.sheet_revised ?? '', hmi_file: keep.hmi_file ?? last.hmi_file ?? '', entered_by: ST.state.settings.entered_by || '' },
       values: {}, notes: '', reason: '', photo: '', latest: {}, allFields: [], fields: [], form: null, source: 'manual',
-      first: false, showInitial: this.readShowInitial(), initialCount: 0,
+      first: false, actualsNow: false, showInitial: this.readShowInitial(), initialCount: 0,
       partInfo: null, newPartOk: '', suggest: {}, corrects: null, correctReason: '',
     };
   },
@@ -65,6 +65,7 @@ ST.tabs.entry = {
     const S = this.S;
     const partChanged = part !== S.part || line !== S.line;
     S.line = line; S.part = part;
+    if (partChanged) S.actualsNow = false;
     if (partChanged && !S.corrects) { // a correction keeps what was typed so the part number itself can be fixed
       S.values = {};
       if (line && part) {
@@ -76,11 +77,16 @@ ST.tabs.entry = {
     this.draw();
   },
 
+  // The first entry for a new part is its sheet: only the printed setpoints are asked. Actual values (and readings) are
+  // asked from the next entry on. "Also enter actuals now" is the way around it for the rare first entry that has both.
+  setupOnly() { const S = this.S; return !!S.first && !S.actualsNow && !S.corrects; },
+
   // ---- helpers
   lastOf(key) { return this.S.latest[key] || {}; },
   val(key) { return this.S.values[key] || (this.S.values[key] = { setpoint: '', actual: '' }); },
   countChanges() {
     let n = 0;
+    if (this.setupOnly()) return 0;
     for (const f of this.S.fields) {
       if (!f.has_sp) continue;
       const v = this.S.values[f.key];
@@ -149,19 +155,22 @@ ST.tabs.entry = {
 
   settingsSection(sec, fields, readings = []) {
     const { h } = ST;
+    const setupOnly = this.setupOnly();
     const rows = fields.map((f) => {
       const last = this.lastOf(f.key);
-      return h('tr', {},
-        h('td', { class: 'lbl', text: f.label }, f.unit ? h('small', { class: 'muted', text: ` ${f.unit}` }) : null, f.role === 'initial' ? h('small', { class: 'tag', text: 'setup' }) : null),
+      const label = h('td', { class: 'lbl', text: f.label }, f.unit ? h('small', { class: 'muted', text: ` ${f.unit}` }) : null, f.role === 'initial' ? h('small', { class: 'tag', text: 'setup' }) : null);
+      if (setupOnly) return h('tr', {}, label, h('td', {}, this.input(f.key, 'setpoint', last.setpoint ?? '')));
+      return h('tr', {}, label,
         h('td', {}, this.input(f.key, 'setpoint', last.setpoint ?? '')),
-        h('td', {}, this.input(f.key, 'actual', last.actual ?? '')),
+        // with no actual on record yet (a part that has only its sheet), the sheet value is shown as the gray hint
+        h('td', {}, this.input(f.key, 'actual', last.actual ?? last.setpoint ?? '')),
         h('td', { class: 'last mono', title: last.ts ? `as of ${ST.fmtDate(last.ts)}` : '' }, last.actual ?? '—'));
     });
     const open = !(localStorage.getItem(`st.collapse.${sec.key}`) === '1');
     const det = h('details', { class: 'card sec', open, ontoggle: () => localStorage.setItem(`st.collapse.${sec.key}`, det.open ? '0' : '1') },
       h('summary', {}, h('h3', { text: sec.label }), h('span', { class: 'muted', text: `${fields.length} setting${fields.length === 1 ? '' : 's'}` })),
-      h('table', { class: 'grid-t' }, h('thead', {}, h('tr', {}, h('th', { text: 'Setting' }), h('th', { text: 'Setpoint (sheet)' }), h('th', { text: 'Actual' }), h('th', { text: 'Last' }))), h('tbody', {}, rows)),
-      readings.length ? this.readingRows(readings) : null);
+      h('table', { class: 'grid-t' }, h('thead', {}, h('tr', {}, h('th', { text: 'Setting' }), h('th', { text: 'Setpoint (sheet)' }), setupOnly ? null : h('th', { text: 'Actual' }), setupOnly ? null : h('th', { text: 'Last' }))), h('tbody', {}, rows)),
+      readings.length && !setupOnly ? this.readingRows(readings) : null);
     return det;
   },
 
@@ -233,6 +242,7 @@ ST.tabs.entry = {
       hd('HMI file #', h('input', { type: 'text', value: S.header.hmi_file, oninput: (e) => { S.header.hmi_file = e.target.value; } })),
       hd('Entered by', h('input', { type: 'text', value: S.header.entered_by, oninput: (e) => { S.header.entered_by = e.target.value; } })));
 
+    const setupOnly = this.setupOnly();
     const secs = [];
     const side = h('div', { class: 'col' });
     // Sections come from the database. A section with any settings is a card on the left (its readings ride along under the
@@ -247,9 +257,9 @@ ST.tabs.entry = {
       const mine = rest.filter((f) => inSec(sec, f));
       const sets = mine.filter((f) => f.has_sp); const reads = mine.filter((f) => !f.has_sp);
       if (sets.length) secs.push(this.settingsSection(sec, sets, reads));
-      else if (reads.length) side.append(this.readingsCard(reads, sec.key === 'readings' ? 'Readings' : sec.label));
+      else if (reads.length && !setupOnly) side.append(this.readingsCard(reads, sec.key === 'readings' ? 'Readings' : sec.label));
     }
-    if (ton.length) side.prepend(this.tonnageCard(ton));
+    if (ton.length && !setupOnly) side.prepend(this.tonnageCard(ton));
 
     // notes + reason + photo
     const chips = ST.opt('reasons') ? h('div', { class: 'chips' }, ['Die change', 'Material', 'Quality', 'Maintenance', 'Other'].map((r) => h('button', { type: 'button', class: `chip ${S.reason === r ? 'on' : ''}`, text: r, onclick: () => { S.reason = S.reason === r ? '' : r; this.draw(); } }))) : null;
@@ -260,15 +270,18 @@ ST.tabs.entry = {
     const notes = ST.card('Notes', h('div', {}, chips, h('textarea', { id: 'f-notes', rows: 3, placeholder: 'Notes for this entry…', oninput: (e) => { S.notes = e.target.value; } , value: S.notes }), photo));
     side.append(notes);
 
-    const setupNote = S.line && S.part && S.initialCount
-      ? h('div', { class: 'card setup-note' }, S.first
-        ? h('span', {}, h('b', { text: `First entry for this ${ST.L.line} + ${ST.L.partShort}. ` }), `Fill the ${S.initialCount} setup field${S.initialCount === 1 ? '' : 's'} too; later entries only ask for the tracked fields.`)
-        : h('label', { class: 'chk' }, h('input', { type: 'checkbox', checked: S.showInitial, onchange: (e) => { S.showInitial = e.target.checked; this.writeShowInitial(S.showInitial); this.applyRole(); this.draw(); } }), `Show setup fields (${S.initialCount})`))
-      : null;
+    const setupNote = S.line && S.part && S.first && !S.corrects
+      ? h('div', { class: 'card setup-note ok' },
+        h('span', {}, h('b', { text: `First entry for this ${ST.L.line} + ${ST.L.partShort.toLowerCase()}: enter the sheet setpoints only. ` }),
+          `${S.initialCount ? `That includes the ${S.initialCount} setup field${S.initialCount === 1 ? '' : 's'}. ` : ''}Actual values and readings are asked from the next entry on.`),
+        h('label', { class: 'chk' }, h('input', { type: 'checkbox', checked: S.actualsNow, onchange: (e) => { S.actualsNow = e.target.checked; this.draw(); } }), ' Also enter actual values now'))
+      : S.line && S.part && S.initialCount && !S.corrects
+        ? h('div', { class: 'card setup-note' }, h('label', { class: 'chk' }, h('input', { type: 'checkbox', checked: S.showInitial, onchange: (e) => { S.showInitial = e.target.checked; this.writeShowInitial(S.showInitial); this.applyRole(); this.draw(); } }), `Show setup fields (${S.initialCount})`)) : null;
     const lists = h('div', { hidden: true }, Object.entries(S.suggest || {}).map(([k, vals]) => h('datalist', { id: `sug-${k}` }, vals.map((v) => h('option', { value: v })))));
 
     const nChanges = this.countChanges();
     const bar = h('div', { class: 'actionbar' },
+      h('button', { class: 'btn ghost', text: 'Scan a sheet…', title: 'Read a PDF, scan or photo of a setup sheet and fill this form from it', onclick: () => this.scanSheet() }),
       h('button', { class: 'btn ghost', text: 'Fill blanks with last values', onclick: () => this.fillBlanks() }),
       h('button', { class: 'btn ghost', text: 'Clear form', onclick: () => this.clearForm() }),
       h('div', { class: 'grow' }),
@@ -279,6 +292,33 @@ ST.tabs.entry = {
       : !S.part ? h('p', { class: 'muted pad', text: `Pick or type a ${ST.L.part} to load the form and last values.` })
         : h('div', { class: 'entry-body' }, h('div', { class: 'col' }, secs), side);
     root.replaceChildren(...[hdr, this.correctBanner(), this.partBanner(), setupNote, body, bar, lists].filter(Boolean));
+  },
+
+  // Scan a sheet (PDF / scan / photo) and fill this form from it. Nothing is saved: the form is checked and saved as usual.
+  async scanSheet() {
+    try {
+      const r = await ST.scan.single();
+      if (!r) return;
+      const { item, as } = r;
+      const S = this.S;
+      this.S = this.fresh({ line: String(item.line), part: item.part, sheet_rev: item.rev || '', sheet_revised: item.revised || '', hmi_file: item.hmi || '' });
+      this.S.header.entered_by = S.header.entered_by || ST.state.settings.entered_by || '';
+      this.S.source = 'ocr';
+      this.S.notes = `Scanned from ${item.file} (OCR)`;
+      await this.loadContext();
+      if (as === 'actual') this.S.actualsNow = true;
+      const mine = new Set(this.S.allFields.map((f) => f.key));
+      let n = 0; let skipped = 0;
+      for (const f of item.fields) {
+        if (!f.include || f.status === 'bad' || Compare.blank(f.value)) continue;
+        if (!mine.has(f.key)) { skipped++; continue; }
+        this.S.values[f.key] = as === 'actual' ? { setpoint: '', actual: f.value } : { setpoint: f.value, actual: '' };
+        n++;
+      }
+      this.applyRole();
+      this.draw();
+      ST.toast(`Filled ${n} value${n === 1 ? '' : 's'} from the sheet${skipped ? ` (${skipped} not on this form)` : ''}. Check them, then save.`);
+    } catch (e) { ST.fail(e); }
   },
 
   fillBlanks() {
@@ -315,7 +355,12 @@ ST.tabs.entry = {
         return;
       }
       const values = {};
-      for (const [k, v] of Object.entries(S.values)) values[k] = { setpoint: v.setpoint, actual: v.actual };
+      const setupOnly = this.setupOnly();
+      const settings = new Set(S.fields.filter((f) => f.has_sp).map((f) => f.key));
+      for (const [k, v] of Object.entries(S.values)) {
+        if (setupOnly && !settings.has(k)) continue;           // readings are not part of a sheet's setpoints
+        values[k] = { setpoint: v.setpoint, actual: setupOnly ? '' : v.actual };
+      }
       const res = await ST.api('saveEntry', {
         line: S.line, part_no: S.part, entry_ts: S.ts, entered_by: S.header.entered_by, sheet_rev: S.header.sheet_rev,
         sheet_revised: S.header.sheet_revised, hmi_file: S.header.hmi_file, notes: S.notes, reason: S.reason, photo_src: S.photo || undefined,

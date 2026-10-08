@@ -17,6 +17,8 @@ jobs:
       - run: npm test
       - name: Headless smoke run (every tab, every theme)
         run: npm run screenshots
+      - name: Sheet scanning end to end (PDF text layer, scanned PDF, photo, entry fill, folder import)
+        run: npm run ocr-smoke
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: screenshots, path: docs/screenshots }
@@ -44,6 +46,24 @@ jobs:
           test -f "dist/Setup-Tracker-$V-setup.exe"
           grep -q "path: Setup-Tracker-$V-setup.exe" dist/latest.yml
           ls dist/*.blockmap
+      - name: Check the OCR files are outside app.asar (the OCR worker loads them from disk)
+        shell: bash
+        run: |
+          U=dist/win-unpacked/resources/app.asar.unpacked/node_modules
+          test -f $U/tesseract.js/src/worker-script/node/index.js
+          test -f $U/tesseract.js-core/tesseract-core-simd-lstm.wasm
+          test -f $U/tesseract.js-core/tesseract-core-lstm.wasm
+          test -f $U/@tesseract.js-data/eng/4.0.0_best_int/eng.traineddata.gz
+          test -f $U/wasm-feature-detect/package.json
+      - name: Sheet scanning from the packaged app (does not block the build)
+        continue-on-error: true
+        shell: bash
+        run: |
+          export OCR_SMOKE_ASAR="$PWD/dist/win-unpacked/resources/app.asar" OCR_SMOKE_OUT="$RUNNER_TEMP/shots" OCR_SMOKE_LOG="$RUNNER_TEMP/ocr-smoke.log"
+          mkdir -p "$OCR_SMOKE_OUT"
+          timeout 600 node_modules/electron/dist/electron.exe scripts/ocr-smoke.js || true
+          cat "$OCR_SMOKE_LOG"
+          grep -q "OCR SMOKE OK" "$OCR_SMOKE_LOG"
       - uses: actions/upload-artifact@v4
         with:
           name: setup-tracker-windows

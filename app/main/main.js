@@ -8,6 +8,8 @@ const { toCsv, toXlsx } = require('./export');
 const { reportHtml } = require('./report');
 const { ProfileManager } = require('./profiles');
 const { createUpdater } = require('./updater');
+const { OcrEngine } = require('./ocr/engine');
+const OcrFiles = require('./ocr/files');
 
 const API = new Set([
   'getSettings', 'setSettings', 'getPaths', 'getFields', 'fieldsForForm', 'updateField', 'addField', 'deleteField',
@@ -15,7 +17,7 @@ const API = new Set([
   'getLineForms', 'setLineForm', 'removeLine', 'formFor', 'listParts', 'allParts', 'listPartsDetailed', 'checkPart', 'renamePart',
   'valueSuggestions', 'saveEntry', 'voidEntry', 'restoreEntry', 'updateNotes',
   'latestValues', 'lastHeader', 'listEntries', 'getEntry', 'dashboard', 'trend', 'compareTrend', 'driftAlerts',
-  'addSection', 'renameSection', 'deleteSection', 'previewTemplate', 'applyTemplate',
+  'addSection', 'renameSection', 'deleteSection', 'previewTemplate', 'applyTemplate', 'previewHistory', 'applyHistory', 'reviewScan', 'previewScans', 'applyScans',
   'ackDrift', 'listBackups', 'integrityCheck', 'backupNow', 'getAudit', 'loadSampleData', 'removeSampleData',
 ]);
 
@@ -23,6 +25,8 @@ let svc;
 let win;
 let pm;
 let updater;
+let ocr;
+const OCR_WORKERS = Math.max(1, Math.min(4, os.cpus().length - 1));
 
 const rootDir = () => process.env.SETUP_TRACKER_DATA_DIR || path.join(os.homedir(), '.setup_tracker');
 function openProfile(id) {
@@ -77,6 +81,12 @@ async function autoReport() {
     win?.webContents.send('report:auto', r.file);
   } catch (e) { console.error('auto report failed', e); }
 }
+
+const listWithLines = (dir) => {
+  const out = OcrFiles.listFolder(dir);
+  out.files.forEach((f) => { f.folderLine = OcrFiles.lineFromFolder(f.folder); });
+  return out;
+};
 
 function register() {
   ipcMain.handle('api', (_e, method, args) => {
@@ -162,10 +172,44 @@ function register() {
     svc.audit('template-export', r.filePath);
     return { file: r.filePath };
   });
+  h('history:export', async ({ form }) => {
+    const bytes = svc.exportHistoryTemplate({ form });
+    const r = await dialog.showSaveDialog(win, { title: 'Save history template', defaultPath: `setup-tracker-history-form-${form}.xlsx`, filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
+    if (r.canceled) return null;
+    fs.writeFileSync(r.filePath, bytes);
+    svc.audit('history-template-export', r.filePath);
+    return { file: r.filePath };
+  });
+  h('history:pick', async () => {
+    const r = await dialog.showOpenDialog(win, { title: 'Import entries from Excel', properties: ['openFile'], filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
+    return r.canceled ? null : r.filePaths[0];
+  });
   h('template:pick', async () => {
     const r = await dialog.showOpenDialog(win, { title: 'Import form template', properties: ['openFile'], filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }] });
     return r.canceled ? null : r.filePaths[0];
   });
+  // ---- OCR: files and recognition (PDF pages are rendered in the window; the words come back to the same place)
+  const SHEET_FILTER = [{ name: 'Setup sheets (PDF / image)', extensions: ['pdf', 'png', 'jpg', 'jpeg', 'bmp', 'webp'] }];
+  h('ocr:pickFiles', async () => {
+    const r = await dialog.showOpenDialog(win, { title: 'Choose setup sheets', properties: ['openFile', 'multiSelections'], filters: SHEET_FILTER });
+    return r.canceled ? null : { files: r.filePaths.map(OcrFiles.describe) };
+  });
+  h('ocr:pickFolder', async () => {
+    const r = await dialog.showOpenDialog(win, { title: 'Choose a folder of setup sheets', properties: ['openDirectory'] });
+    if (r.canceled) return null;
+    return listWithLines(r.filePaths[0]);
+  });
+  h('ocr:describe', (file) => OcrFiles.describe(file));
+  h('ocr:folder', (dir) => listWithLines(dir));
+  h('ocr:read', (file) => new Uint8Array(OcrFiles.readFile(file)));
+  h('ocr:info', () => ({ workers: OCR_WORKERS }));
+  h('ocr:recognize', async ({ bytes }) => {
+    const buf = Buffer.from(bytes);
+    if (!OcrFiles.isImage(buf)) throw new Error('That is not a PNG, JPEG, BMP or WebP image');
+    ocr = ocr || new OcrEngine({ max: OCR_WORKERS });
+    return ocr.recognize(buf);
+  });
+  h('ocr:release', async () => { const e = ocr; ocr = null; if (e) await e.terminate(); return true; });
   h('shell:openFolder', (p) => { fs.mkdirSync(p, { recursive: true }); return shell.openPath(p); });
   h('shell:showItem', (p) => shell.showItemInFolder(p));
 }
@@ -211,7 +255,7 @@ else {
     win.webContents.once('did-finish-load', () => setTimeout(autoReport, 1500));
     app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createWindow(); });
   });
-  app.on('before-quit', () => { try { svc?.close(); } catch { /* ignore */ } });
+  app.on('before-quit', () => { try { svc?.close(); } catch { /* ignore */ } try { ocr?.terminate(); } catch { /* ignore */ } });
   app.on('window-all-closed', () => app.quit());
 }
 

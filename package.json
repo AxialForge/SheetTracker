@@ -1,11 +1,12 @@
 {
   "name": "setup-tracker",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Local press setup sheet tracker for Viking Forge",
   "main": "app/main/main.js",
   "scripts": {
     "start": "electron .",
     "test": "node --test \"tests/*.test.js\"",
+    "ocr-smoke": "xvfb-run -a electron --no-sandbox scripts/ocr-smoke.js || electron scripts/ocr-smoke.js",
     "screenshots": "xvfb-run -a electron --no-sandbox scripts/screenshots.js || electron scripts/screenshots.js",
     "dist": "electron-builder --win --publish never",
     "icon": "node scripts/make-icon.js",
@@ -29,7 +30,13 @@
     "files": [
       "app/**/*",
       "build/icon.png",
-      "package.json"
+      "package.json",
+      "!node_modules/@napi-rs/**",
+      "!node_modules/pdfjs-dist/{legacy,web,types,image_decoders,cmaps,standard_fonts,iccs}/**",
+      "!node_modules/pdfjs-dist/build/{*.map,pdf.mjs,pdf.worker.mjs,pdf.sandbox*}",
+      "!node_modules/tesseract.js-core/*.wasm.js",
+      "!node_modules/tesseract.js-core/{tesseract-core,tesseract-core-simd,tesseract-core-relaxedsimd}.{js,wasm}",
+      "!node_modules/@tesseract.js-data/eng/4.0.0/**"
     ],
     "win": {
       "target": [
@@ -57,9 +64,18 @@
         "owner": "AxialForge",
         "repo": "SheetTracker"
       }
+    ],
+    "asarUnpack": [
+      "node_modules/tesseract.js/**",
+      "node_modules/tesseract.js-core/**",
+      "node_modules/@tesseract.js-data/**",
+      "node_modules/{bmp-js,idb-keyval,is-url,node-fetch,whatwg-url,tr46,webidl-conversions,opencollective-postinstall,regenerator-runtime,wasm-feature-detect,zlibjs}/**"
     ]
   },
   "dependencies": {
-    "electron-updater": "^6.8.9"
+    "@tesseract.js-data/eng": "^1.0.0",
+    "electron-updater": "^6.8.9",
+    "pdfjs-dist": "^6.4.299",
+    "tesseract.js": "^7.0.0"
   }
 }

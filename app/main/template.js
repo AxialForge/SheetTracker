@@ -57,20 +57,29 @@ function buildTemplate(svc, opts = {}) {
   const rows = [];
   for (const f of pick) {
     const fields = svc.getFormFields(f.form_no).slice().sort((a, b) => (secOrder.get(a.section) ?? 99) - (secOrder.get(b.section) ?? 99) || a.sort - b.sort);
-    for (const fl of fields) {
-      rows.push([f.form_no, secLabel(fl.section), fl.label, T.label(fl.kind).split(' (')[0], fl.unit || '',
-        fl.has_sp ? ENTRY.setting : ENTRY.reading, ROLE[fl.role] || ROLE.tracked,
-        String(fl.choices || '').split('\n').filter(Boolean).join('; '), fl.min || '', fl.max || '', fl.key]);
-    }
+    for (const fl of fields) rows.push(fieldRow(f.form_no, secLabel(fl.section), fl));
   }
+  const formRows = pick.map((f) => [f.form_no, f.name, f.notes, f.lines.join(', ')]);
+  return assemble(svc, { rows, formRows, blank: opts.blank });
+}
+
+// One Fields-sheet row (in FIELD_HEADERS order) for a field on a form. fl: a field record with its role.
+function fieldRow(formNo, sectionLabel, fl) {
+  return [formNo, sectionLabel, fl.label, T.label(fl.kind).split(' (')[0], fl.unit || '',
+    fl.has_sp ? ENTRY.setting : ENTRY.reading, ROLE[fl.role] || ROLE.tracked,
+    String(fl.choices || '').split('\n').filter(Boolean).join('; '), fl.min || '', fl.max || '', fl.key || ''];
+}
+
+// The workbook layout: Read me, Fields (with dropdowns), Forms, hidden Lists. rows / formRows as built above.
+function assemble(svc, { rows, formRows, blank = false }) {
+  const sections = svc.getSections();
   const lists = [];
   const types = T.KINDS.map((k) => k.label.split(' (')[0]);
   const secLabels = sections.map((s) => s.label);
   const n = Math.max(types.length, secLabels.length, 2);
   for (let i = 0; i < n; i++) lists.push([types[i] || '', i === 0 ? ENTRY.setting : i === 1 ? ENTRY.reading : '', i === 0 ? ROLE.tracked : i === 1 ? ROLE.initial : '', secLabels[i] || '']);
-  const formRows = pick.map((f) => [f.form_no, f.name, f.notes, f.lines.join(', ')]);
   return toXlsxBook([
-    { name: 'Read me', headers: ['Setup Tracker form template'], rows: readMe(opts.blank).slice(1).map((r) => [r[0]]), widths: [120], freeze: null, wrap: [0] },
+    { name: 'Read me', headers: ['Setup Tracker form template'], rows: readMe(blank).slice(1).map((r) => [r[0]]), widths: [120], freeze: null, wrap: [0] },
     {
       name: 'Fields', headers: FIELD_HEADERS, rows, freeze: { x: 3, y: 1 }, muted: [10], numericFrom: undefined,
       widths: [8, 20, 30, 16, 10, 10, 11, 34, 9, 9, 22],
@@ -418,4 +427,4 @@ function applyPlan(svc, plan) {
   svc.audit('template-import', `${plan.summary.formsAdded} forms, ${plan.summary.fieldsAdded} new fields, ${plan.summary.fieldsChanged} changed, ${plan.summary.fieldsOnForms} added to forms, ${plan.summary.roleChanges} role changes, ${plan.summary.removed} removed, ${plan.summary.linesSet} lines`);
 }
 
-module.exports = { buildTemplate, parseTemplate, planTemplate, applyPlan, FIELD_HEADERS };
+module.exports = { buildTemplate, assemble, fieldRow, parseTemplate, planTemplate, applyPlan, FIELD_HEADERS };
