@@ -10,7 +10,7 @@ Joe, process engineer at Viking Forge (forging job shop). Manages press lines 1,
 - Track variables that may or may not change; notes section per entry.
 - Exportable data (CSV/XLSX) and built-in charts.
 - Data protected: backups, and **backup/restore inside the app**.
-- All local, single user. Network-folder DB, multi-user, and OCR/photo extraction of sheets are **deferred** (don't build; keep DB path configurable).
+- All local, single user. Network-folder DB and multi-user are **deferred** (don't build; keep DB path configurable).
 - All fields usable; any can be hidden, renamed, or added (custom).
 
 ## 3. Sheet / field knowledge
@@ -56,7 +56,7 @@ v4 additions (bump user_version to 3): `entries.reason TEXT`, `entries.photo_pat
 | Compare two entries | NO |
 | Printable pre-filled sheet | NO |
 | Sheet revision tracking | NOT YET (roadmap only) |
-| OCR / photo extraction | DEFERRED |
+| OCR / photo extraction | DONE (local Tesseract; reviewed before saving) |
 | Network folder / multi-user | DEFERRED |
 
 ## 8. Theme

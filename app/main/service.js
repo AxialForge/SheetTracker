@@ -10,6 +10,7 @@ const T = require('../shared/types');
 const F = require('./fields');
 const Tpl = require('./template');
 const Hist = require('./history');
+const Scan = require('./ocr/sheets');
 
 const SCHEMA_VERSION = 6;
 const ROLES = ['tracked', 'initial']; // tracked = changes day to day; initial = set once when a Line+Part is first entered
@@ -1124,6 +1125,19 @@ class SetupService {
     Hist.applyHistory(this, plan);
     return { added: plan.entries.length, skipped: plan.skipped.length, newParts: plan.summary.newParts.length };
   }
+
+  // ---------- scanned sheets (OCR happens in the main process / renderer; these take its words) ----------
+  reviewScan(scan, opts = {}) {
+    const item = Scan.reviewScan(this, scan, opts);
+    if (item.line && item.part) { item.partInfo = Scan.partInfo(this, item.line, item.part); item.previous = Scan.previous(this, item.line, item.part); }
+    return item;
+  }
+  previewScans(items, opts = {}) {
+    const plan = Scan.planScans(this, items, opts);
+    delete plan.entries;
+    return plan;
+  }
+  applyScans(items, opts = {}) { return Scan.applyScans(this, items, opts); }
 
   // ---------- sample data ----------
   loadSampleData() {

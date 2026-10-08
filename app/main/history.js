@@ -149,13 +149,19 @@ function mapHeaders(svc, header, columnsSheet) {
 
 // ---------- plan ----------
 // opts: { skipBad: import the good rows and list the bad ones as skipped }
+const emptyPlan = () => ({
+  errors: [], warnings: [], skipped: [], entries: [], changed: 0, rowsRead: 0,
+  summary: { rows: 0, toAdd: 0, duplicates: 0, skipped: 0, newParts: [], values: 0, first: '', last: '', outOfRange: 0 },
+});
 function planHistory(svc, buf, opts = {}) {
-  const plan = {
-    errors: [], warnings: [], skipped: [], entries: [], changed: 0, rowsRead: 0,
-    summary: { rows: 0, toAdd: 0, duplicates: 0, skipped: 0, newParts: [], values: 0, first: '', last: '', outOfRange: 0 },
-  };
+  const plan = emptyPlan();
   let sheets;
   try { sheets = readXlsx(buf); } catch (e) { plan.errors.push(e.message); return plan; }
+  return planSheets(svc, sheets, opts, plan);
+}
+
+// The plan for already-parsed sheets ([{name, rows}]): the Excel import reads them from a workbook, the scan import builds them.
+function planSheets(svc, sheets, opts = {}, plan = emptyPlan()) {
   const sheet = sheets.find((s) => lc(s.name) === 'entries') || sheets.find((s) => s.rows[0] && mapHeaders(svc, s.rows[0], null).fixed.part !== undefined && mapHeaders(svc, s.rows[0], null).fixed.line !== undefined) || sheets[0];
   if (!sheet || !sheet.rows.length) { plan.errors.push('The workbook has no rows.'); return plan; }
   const columns = sheets.find((s) => lc(s.name) === 'columns');
@@ -280,16 +286,16 @@ function applyHistory(svc, plan) {
   svc._tx(() => {
     const insPart = db.prepare('INSERT OR IGNORE INTO parts(line,part_no) VALUES(?,?)');
     const insEntry = db.prepare(`INSERT INTO entries(line,part_no,entry_ts,entered_by,sheet_rev,sheet_revised,hmi_file,notes,source,reason,photo_path)
-      VALUES(?,?,?,?,?,?,?,?,'import',?,'')`);
+      VALUES(?,?,?,?,?,?,?,?,?,?,'')`);
     const insVal = db.prepare('INSERT INTO entry_values(entry_id,key,setpoint,actual) VALUES(?,?,?,?)');
     for (const e of plan.entries) {
       insPart.run(e.line, e.part_no);
-      const id = Number(insEntry.run(e.line, e.part_no, e.entry_ts, e.entered_by, e.sheet_rev, e.sheet_revised, e.hmi_file, e.notes, e.reason).lastInsertRowid);
+      const id = Number(insEntry.run(e.line, e.part_no, e.entry_ts, e.entered_by, e.sheet_rev, e.sheet_revised, e.hmi_file, e.notes, plan.source || 'import', e.reason).lastInsertRowid);
       for (const [k, v] of Object.entries(e.values)) insVal.run(id, k, v.setpoint ?? null, v.actual ?? null);
     }
   });
   svc._cache = null;
-  svc.audit('history-import', `${plan.entries.length} entries (${plan.summary.first.slice(0, 10)} to ${plan.summary.last.slice(0, 10)}), ${plan.summary.newParts.length} new parts, ${plan.skipped.length} rows skipped`);
+  svc.audit(plan.source === 'ocr' ? 'scan-import' : 'history-import', `${plan.entries.length} entries (${plan.summary.first.slice(0, 10)} to ${plan.summary.last.slice(0, 10)}), ${plan.summary.newParts.length} new parts, ${plan.skipped.length} rows skipped`);
 }
 
-module.exports = { buildHistoryTemplate, planHistory, applyHistory, parseTs };
+module.exports = { buildHistoryTemplate, planHistory, planSheets, applyHistory, parseTs, mapHeaders };

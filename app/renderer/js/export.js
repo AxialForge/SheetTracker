@@ -51,8 +51,14 @@ ST.tabs.export = {
         h('button', { class: 'btn', text: 'Download history template', onclick: async () => { try { if (!hist.form) throw new Error('Add a form first (Forms tab).'); const r = await ST.main('history:export', { form: Number(hist.form) }); if (r) { ST.toast('Template saved'); await ST.main('shell:showItem', r.file); } } catch (e) { ST.fail(e); } } })),
       h('div', { class: 'toolbar' }, h('button', { class: 'btn primary', text: 'Import entries from Excel…', onclick: () => ST.importHistory().catch(ST.fail) }),
         h('span', { class: 'muted', text: 'Also accepts this app\'s own Excel data export.' }))));
+    const scanCard = ST.card('Scan setup sheets (OCR)', h('div', {},
+      h('p', { class: 'muted', text: 'Reads PDF setup sheets, scans and photos on this PC (nothing is sent anywhere). PDFs with real text are read exactly; scans and photos are read by OCR and every value is shown for review before anything is saved.' }),
+      h('div', { class: 'toolbar' },
+        h('button', { class: 'btn primary', text: 'Scan a folder of sheets…', onclick: () => ST.scan.bulk('folder').catch(ST.fail) }),
+        h('button', { class: 'btn', text: 'Scan files…', onclick: () => ST.scan.bulk('files').catch(ST.fail) }),
+        h('span', { class: 'muted', text: 'A folder named like “Line 7” sets the line for the sheets inside it.' }))));
     const charts = ST.card('Charts', h('p', { class: 'muted', text: 'Every chart on the Dashboard has a “Save PNG” button.' }));
-    root.replaceChildren(h('div', { class: 'grid' }, dataCard, rep, histCard, charts));
+    root.replaceChildren(h('div', { class: 'grid' }, dataCard, rep, histCard, scanCard, charts));
   },
 };
 

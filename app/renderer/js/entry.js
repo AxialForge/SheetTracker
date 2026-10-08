@@ -281,6 +281,7 @@ ST.tabs.entry = {
 
     const nChanges = this.countChanges();
     const bar = h('div', { class: 'actionbar' },
+      h('button', { class: 'btn ghost', text: 'Scan a sheet…', title: 'Read a PDF, scan or photo of a setup sheet and fill this form from it', onclick: () => this.scanSheet() }),
       h('button', { class: 'btn ghost', text: 'Fill blanks with last values', onclick: () => this.fillBlanks() }),
       h('button', { class: 'btn ghost', text: 'Clear form', onclick: () => this.clearForm() }),
       h('div', { class: 'grow' }),
@@ -291,6 +292,33 @@ ST.tabs.entry = {
       : !S.part ? h('p', { class: 'muted pad', text: `Pick or type a ${ST.L.part} to load the form and last values.` })
         : h('div', { class: 'entry-body' }, h('div', { class: 'col' }, secs), side);
     root.replaceChildren(...[hdr, this.correctBanner(), this.partBanner(), setupNote, body, bar, lists].filter(Boolean));
+  },
+
+  // Scan a sheet (PDF / scan / photo) and fill this form from it. Nothing is saved: the form is checked and saved as usual.
+  async scanSheet() {
+    try {
+      const r = await ST.scan.single();
+      if (!r) return;
+      const { item, as } = r;
+      const S = this.S;
+      this.S = this.fresh({ line: String(item.line), part: item.part, sheet_rev: item.rev || '', sheet_revised: item.revised || '', hmi_file: item.hmi || '' });
+      this.S.header.entered_by = S.header.entered_by || ST.state.settings.entered_by || '';
+      this.S.source = 'ocr';
+      this.S.notes = `Scanned from ${item.file} (OCR)`;
+      await this.loadContext();
+      if (as === 'actual') this.S.actualsNow = true;
+      const mine = new Set(this.S.allFields.map((f) => f.key));
+      let n = 0; let skipped = 0;
+      for (const f of item.fields) {
+        if (!f.include || f.status === 'bad' || Compare.blank(f.value)) continue;
+        if (!mine.has(f.key)) { skipped++; continue; }
+        this.S.values[f.key] = as === 'actual' ? { setpoint: '', actual: f.value } : { setpoint: f.value, actual: '' };
+        n++;
+      }
+      this.applyRole();
+      this.draw();
+      ST.toast(`Filled ${n} value${n === 1 ? '' : 's'} from the sheet${skipped ? ` (${skipped} not on this form)` : ''}. Check them, then save.`);
+    } catch (e) { ST.fail(e); }
   },
 
   fillBlanks() {
